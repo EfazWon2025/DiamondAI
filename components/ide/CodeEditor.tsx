@@ -1,4 +1,4 @@
-import React, { useRef, useLayoutEffect } from 'react';
+import React, { useRef, useLayoutEffect, useCallback } from 'react';
 
 const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -70,12 +70,32 @@ const LineNumbers: React.FC<{ count: number }> = ({ count }) => (
     </div>
 );
 
-export const CodeEditor: React.FC<{ value: string; onChange: (v: string) => void; language?: string; readOnly?: boolean; }> = ({ value = '', onChange, language = 'java', readOnly = false }) => {
+interface CodeEditorProps {
+    value: string;
+    onChange: (v: string) => void;
+    onCursorChange?: (pos: { line: number; col: number }) => void;
+    language?: string;
+    readOnly?: boolean;
+}
+
+export const CodeEditor: React.FC<CodeEditorProps> = ({ value = '', onChange, onCursorChange, language = 'java', readOnly = false }) => {
   const lines = value.split('\n').length;
   const preRef = useRef<HTMLPreElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   const highlightedCode = highlightJava(value) + '\n';
+
+  const updateCursorPosition = useCallback(() => {
+    if (!onCursorChange || !textareaRef.current) return;
+    const textarea = textareaRef.current;
+    const cursorPosition = textarea.selectionStart;
+    const textUpToCursor = textarea.value.substring(0, cursorPosition);
+    const lines = textUpToCursor.split('\n');
+    const line = lines.length;
+    const col = lines[lines.length - 1].length + 1;
+    onCursorChange({ line, col });
+  }, [onCursorChange]);
+
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -86,8 +106,9 @@ export const CodeEditor: React.FC<{ value: string; onChange: (v: string) => void
       pre.scrollLeft = textarea.scrollLeft;
     };
     textarea.addEventListener('scroll', syncScroll);
+    updateCursorPosition();
     return () => textarea.removeEventListener('scroll', syncScroll);
-  }, []);
+  }, [value, updateCursorPosition]);
 
   return (
     <div className="relative h-full font-mono text-sm bg-darker overflow-hidden flex">
@@ -97,6 +118,8 @@ export const CodeEditor: React.FC<{ value: string; onChange: (v: string) => void
           ref={textareaRef}
           value={value}
           onChange={(e) => !readOnly && onChange(e.target.value)}
+          onKeyUp={updateCursorPosition}
+          onClick={updateCursorPosition}
           className="absolute inset-0 w-full h-full p-4 bg-transparent caret-light outline-none resize-none whitespace-pre-wrap break-words leading-relaxed overflow-auto font-mono text-sm text-transparent"
           style={{ fontFamily: "'JetBrains Mono', monospace", WebkitTextFillColor: 'transparent', tabSize: 4 }}
           spellCheck="false"

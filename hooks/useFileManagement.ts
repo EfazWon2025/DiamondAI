@@ -1,14 +1,75 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Project, FileTreeNode } from '../types';
-import { getProjectFiles, getFileContent, writeFileContent } from '../services/api';
+import { getProjectFiles, getFileContent, writeFileContent, renameFileOrFolder, deleteFileOrFolder } from '../services/api';
+
+const useOptimisticTreeUpdate = (initialTree: FileTreeNode | null, addToast: (message: string, type?: 'success' | 'info' | 'error') => void) => {
+    const [tree, setTree] = useState<FileTreeNode | null>(initialTree);
+
+    useEffect(() => {
+        setTree(initialTree);
+    }, [initialTree]);
+    
+    const traverseAndModify = useCallback((root: FileTreeNode | null, targetPath: string, modifyFn: (node: FileTreeNode) => FileTreeNode | null): FileTreeNode | null => {
+        if (!root) return null;
+        if (root.path === targetPath) return modifyFn(root);
+
+        if (root.children) {
+            const newChildren: FileTreeNode[] = [];
+            let modified = false;
+            for (const child of root.children) {
+                const result = traverseAndModify(child, targetPath, modifyFn);
+                if (result !== child) modified = true;
+                if (result) newChildren.push(result);
+            }
+             if (modified) return { ...root, children: newChildren };
+        }
+        return root;
+    }, []);
+
+    const renameNode = useCallback(async (oldPath: string, newPath: string) => {
+        const updatePaths = (node: FileTreeNode, oldBasePath: string, newBasePath: string): FileTreeNode => {
+            const updatedPath = node.path.replace(oldBasePath, newBasePath);
+            const newNode = { ...node, path: updatedPath, name: updatedPath.split('/').pop()! };
+            if (newNode.children) {
+                newNode.children = newNode.children.map(child => updatePaths(child, oldBasePath, newBasePath));
+            }
+            return newNode;
+        };
+
+        const originalTree = tree;
+        setTree(currentTree => traverseAndModify(currentTree, oldPath, (node) => updatePaths(node, oldPath, newPath)));
+        try {
+            await renameFileOrFolder(originalTree!.path.split('/')[0], oldPath, newPath);
+        } catch (e) {
+            setTree(originalTree); // Revert on failure
+            throw e;
+        }
+    }, [tree, traverseAndModify]);
+
+    const deleteNode = useCallback(async (path: string) => {
+        const originalTree = tree;
+        setTree(currentTree => traverseAndModify(currentTree, path, () => null));
+        try {
+            await deleteFileOrFolder(originalTree!.path.split('/')[0], path);
+        } catch (e) {
+            setTree(originalTree); // Revert on failure
+            throw e;
+        }
+    }, [tree, traverseAndModify]);
+
+    return { tree, setTree, renameNode, deleteNode };
+};
+
 
 export const useFileManagement = (project: Project, addToast: (message: string, type?: 'success' | 'info' | 'error') => void) => {
-    const [fileTree, setFileTree] = useState<FileTreeNode | null>(null);
+    const [initialFileTree, setInitialFileTree] = useState<FileTreeNode | null>(null);
+    const { tree: fileTree, renameNode, deleteNode } = useOptimisticTreeUpdate(initialFileTree, addToast);
+    
     const [fileContents, setFileContents] = useState<Record<string, string>>({});
     const [openFiles, setOpenFiles] = useState<FileTreeNode[]>([]);
     const [activePath, setActivePath] = useState<string>('');
-    const saveTimeoutRef = useRef<number | null>(null);
-
+    const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
+    
     const findFileInTree = useCallback((node: FileTreeNode, fileExtension: string): FileTreeNode | null => {
         if (node.type === 'file' && node.name.endsWith(fileExtension)) return node;
         if (node.children) {
@@ -22,11 +83,11 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
 
     useEffect(() => {
         getProjectFiles(project.id).then(tree => {
-            setFileTree(tree);
+            setInitialFileTree(tree);
             const mainJavaFile = findFileInTree(tree, '.java');
             if (mainJavaFile) handleFileSelect(mainJavaFile);
         }).catch(() => addToast('Failed to load project files.', 'error'));
-    }, [project, findFileInTree]);
+    }, [project, findFileInTree, addToast]);
 
     const handleFileSelect = async (file: FileTreeNode) => {
         if (file.type !== 'file') return;
@@ -45,11 +106,28 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
     };
 
     const handleCloseFile = (path: string) => {
-        const newOpenFiles = openFiles.filter(f => f.path !== path);
-        setOpenFiles(newOpenFiles);
+        setOpenFiles(prev => prev.filter(f => f.path !== path));
         if (activePath === path) {
-            // FIX: Replaced .at(-1) with standard array access for wider compatibility.
-            setActivePath(newOpenFiles.length > 0 ? newOpenFiles[newOpenFiles.length - 1]!.path : 'visual-builder');
+            setActivePath(prev => openFiles.length > 1 ? openFiles.filter(f => f.path !== path)[0].path : 'visual-builder');
+        }
+        setDirtyFiles(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(path);
+            return newSet;
+        });
+    };
+
+    const saveFile = async (path: string) => {
+        try {
+            await writeFileContent(project.id, path, fileContents[path]);
+            setDirtyFiles(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(path);
+                return newSet;
+            });
+            addToast(`${path.split('/').pop()} saved.`, 'success');
+        } catch {
+            addToast(`Failed to save ${path.split('/').pop()}`, 'error');
         }
     };
 
@@ -57,15 +135,11 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
         if (path === 'visual-builder') return;
         
         setFileContents(prev => ({ ...prev, [path]: newCode }));
-        
-        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-        
+
         if (instantSave) {
-            writeFileContent(project.id, path, newCode).catch(() => addToast("Failed to save changes.", "error"));
+            saveFile(path);
         } else {
-            saveTimeoutRef.current = window.setTimeout(() => {
-                writeFileContent(project.id, path, newCode);
-            }, 1000);
+             setDirtyFiles(prev => new Set(prev).add(path));
         }
     };
 
@@ -83,11 +157,15 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
         fileContents,
         openFiles,
         activePath,
+        dirtyFiles,
         setActivePath,
         handleFileSelect,
         handleCloseFile,
         handleCodeChange,
         handleAiApplyChanges,
-        findFileInTree
+        findFileInTree,
+        saveFile,
+        renameNode,
+        deleteNode,
     };
 };

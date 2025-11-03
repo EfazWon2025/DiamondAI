@@ -89,3 +89,13 @@ export interface AIHistoryItem {
     timestamp: Date;
     applied: boolean;
 }
+
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
+
+export interface LogEntry {
+    level: LogLevel;
+    message: string;
+    timestamp: string;
+    source?: 'Compiler' | 'System';
+    details?: string;
+}

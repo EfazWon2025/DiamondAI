@@ -1,4 +1,4 @@
-// FIX: Define types for the Web Speech API to resolve 'Cannot find name SpeechRecognition' error.
+// Define types for the Web Speech API to resolve 'Cannot find name SpeechRecognition' error.
 // These types are experimental and not included in TypeScript's default DOM library.
 interface SpeechRecognitionErrorEvent extends Event {
   readonly error: string;
@@ -27,7 +27,8 @@ interface SpeechRecognition extends EventTarget {
 
 import React, { useState, useEffect, useRef } from 'react';
 import { generatePluginCode } from '../../services/geminiService';
-import type { Project, AIHistoryItem } from '../../types';
+import { processFile } from '../../services/fileProcessor';
+import type { Project, ToastMessage } from '../../types';
 import { Icon } from '../Icon';
 import { CodeEditor } from './CodeEditor';
 
@@ -36,48 +37,85 @@ const CodeSkeletonLoader: React.FC = () => (
     <div className="h-4 bg-dark rounded w-1/3 animate-pulse"></div>
     <div className="h-4 bg-dark rounded w-3/4 animate-pulse"></div>
     <div className="h-4 bg-dark rounded w-1/2 animate-pulse"></div>
-    <div className="h-4 bg-dark rounded w-5/6 animate-pulse"></div>
-    <div className="h-4 bg-dark rounded w-2/3 animate-pulse"></div>
-    <div className="h-4 bg-dark rounded w-3/5 animate-pulse"></div>
   </div>
 );
 
-const PromptSuggestions: React.FC<{ onSelect: (prompt: string) => void }> = ({ onSelect }) => {
-  const suggestions = [
-    "Give players 5 diamonds when they join",
-    "Strike lightning when a player says 'thor'",
-    "Create a /heal command",
-    "Make players fly with /fly",
-  ];
-  return (
-    <div className="p-4 border-t border-secondary/10 shrink-0">
-        <h4 className="text-sm font-bold text-light mb-2">✨ Try these ideas</h4>
-        <div className="flex flex-wrap gap-2">
-            {suggestions.map(s => (
-                <button key={s} onClick={() => onSelect(s)} className="text-xs bg-dark text-light-text py-1 px-3 rounded-full hover:bg-secondary/20 hover:text-light transition-colors">
-                    {s}
-                </button>
-            ))}
+interface ChatTurn {
+    id: string;
+    prompt: string;
+    responseCode: string;
+    status: 'pending' | 'completed' | 'applied' | 'error' | 'discarded';
+    fileContextName?: string;
+}
+
+const UserMessage: React.FC<{ turn: ChatTurn }> = ({ turn }) => (
+    <div className="flex justify-end mb-4">
+        <div className="bg-secondary/80 text-light p-3 rounded-lg max-w-lg shadow-md">
+            <p>{turn.prompt}</p>
+            {turn.fileContextName && (
+                <div className="mt-2 text-xs bg-secondary/50 p-1.5 rounded-md flex items-center gap-2">
+                    <Icon name="fileText" className="w-4 h-4" />
+                    <span>{turn.fileContextName}</span>
+                </div>
+            )}
         </div>
     </div>
-  );
-};
+);
+
+const AiMessage: React.FC<{ turn: ChatTurn; onApply: () => void; onDiscard: () => void; }> = ({ turn, onApply, onDiscard }) => (
+    <div className="flex justify-start mb-4">
+        <div className="bg-darker p-1 rounded-lg w-full shadow-md border border-secondary/10">
+            {turn.status === 'pending' && <CodeSkeletonLoader />}
+            {turn.status === 'error' && <div className="p-3 text-accent">{turn.responseCode}</div>}
+            {(turn.status === 'completed' || turn.status === 'applied' || turn.status === 'discarded') && (
+                <div className="flex flex-col min-h-0">
+                    <div className="max-h-96 overflow-y-auto rounded-t-md">
+                        <CodeEditor value={turn.responseCode} onChange={() => {}} readOnly />
+                    </div>
+                    <div className="p-2 flex justify-end items-center gap-2 border-t border-secondary/10">
+                        {turn.status === 'completed' && (
+                            <>
+                                <button onClick={onDiscard} className="px-3 py-1 bg-dark text-light-text rounded hover:bg-dark/50 border border-secondary/20 font-semibold text-xs">Discard</button>
+                                <button onClick={onApply} className="px-3 py-1 bg-primary text-darker rounded hover:bg-primary/80 font-bold text-xs">Apply</button>
+                            </>
+                        )}
+                        {turn.status === 'applied' && (
+                            <span className="text-primary text-xs font-bold px-2 py-0.5 bg-primary/20 rounded-full flex items-center gap-1"><Icon name="checkCircle2" className="w-3 h-3" />Applied</span>
+                        )}
+                         {turn.status === 'discarded' && (
+                            <span className="text-light-text/70 text-xs font-semibold px-2 py-0.5">Discarded</span>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    </div>
+);
+
 
 interface AICodeAssistantProps {
   project: Project | null;
   originalCode: string;
   onApplyChanges: (newCode: string) => void;
+  addToast: (message: string, type?: ToastMessage['type']) => void;
 }
 
-export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, originalCode, onApplyChanges }) => {
+export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, originalCode, onApplyChanges, addToast }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
-  const [history, setHistory] = useState<AIHistoryItem[]>([]);
+  const [chatLog, setChatLog] = useState<ChatTurn[]>([]);
   const [isListening, setIsListening] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [isFileProcessing, setIsFileProcessing] = useState(false);
+  
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setGeneratedCode(null); }, [originalCode]);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatLog, isGenerating]);
 
   useEffect(() => {
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -104,117 +142,141 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
 
   const toggleListening = () => {
     if (recognitionRef.current) {
-        if (isListening) {
-            recognitionRef.current.stop();
-        } else {
-            recognitionRef.current.start();
-            setIsListening(true);
-        }
+        if (isListening) recognitionRef.current.stop();
+        else { recognitionRef.current.start(); setIsListening(true); }
     }
   };
+  
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setIsFileProcessing(true);
+      try {
+        const content = await processFile(file);
+        setUploadedFile(file);
+        setFileContent(content);
+        addToast(`Attached: ${file.name}`, 'info');
+      } catch (error) {
+        console.error("Error processing file:", error);
+        addToast(error instanceof Error ? error.message : 'Failed to process file', 'error');
+        handleRemoveFile();
+      } finally {
+        setIsFileProcessing(false);
+      }
+    }
+  };
+
+  const handleRemoveFile = () => {
+      setUploadedFile(null); setFileContent(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+  
+  const handleAttachClick = () => fileInputRef.current?.click();
 
   const handleGenerateCode = async () => {
     if (!prompt.trim() || !project || !originalCode) return;
     
     setIsGenerating(true);
-    setGeneratedCode(null);
+    const newTurn: ChatTurn = {
+        id: Date.now().toString(),
+        prompt,
+        responseCode: '',
+        status: 'pending',
+        fileContextName: uploadedFile?.name,
+    };
+    setChatLog(prev => [newTurn, ...prev]);
+    setPrompt('');
+    handleRemoveFile();
+
     try {
-      const newCode = await generatePluginCode(project, prompt, originalCode, history);
-      setGeneratedCode(newCode);
-      setHistory(prev => [{ id: Date.now().toString(), prompt, code: newCode, timestamp: new Date(), applied: false }, ...prev.slice(0, 19)]);
+      const historyForApi = chatLog
+        .filter(t => t.status === 'applied')
+        .map(t => ({ prompt: t.prompt, code: t.responseCode }));
+        
+      const newCode = await generatePluginCode(project, newTurn.prompt, originalCode, historyForApi, fileContent);
+      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, responseCode: newCode, status: 'completed' } : t));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-      setGeneratedCode(`// Error generating code: ${errorMessage}\n\n// Your original code is safe.\n${originalCode}`);
+      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, responseCode: `// Error generating code: ${errorMessage}`, status: 'error' } : t));
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleApplyChanges = () => {
-    if (generatedCode && !generatedCode.startsWith('// Error')) {
-      onApplyChanges(generatedCode);
-      setGeneratedCode(null);
-      setPrompt('');
-      setHistory(prev => {
-        const newHistory = [...prev];
-        const item = newHistory.find(item => item.code === generatedCode);
-        if (item) item.applied = true;
-        return newHistory;
-      });
-    }
+  const handleApplyChanges = (turnId: string, newCode: string) => {
+    if (newCode.startsWith('// Error')) return;
+    onApplyChanges(newCode);
+    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'applied' } : t));
+  };
+
+  const handleDiscard = (turnId: string) => {
+    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'discarded' } : t));
   };
   
   const canGenerate = !isGenerating && prompt.trim().length > 0 && originalCode.length > 0;
-
-  const renderContent = () => {
-    if (isGenerating) {
-        return <CodeSkeletonLoader />;
-    }
-    if (generatedCode !== null) {
-      return (
-        <div className="flex-grow flex flex-col bg-darker min-h-0">
-          <div className="p-3 flex justify-between items-center shrink-0 border-b border-secondary/20">
-            <h3 className="font-bold text-light flex items-center gap-2"><Icon name="sparkles" className="w-4 h-4 text-primary" />AI Generated Preview</h3>
-            <div className="flex gap-2">
-              <button onClick={() => setGeneratedCode(null)} className="px-3 py-1 bg-dark text-light-text rounded hover:bg-dark/50 border border-secondary/20 font-semibold">Discard</button>
-              <button onClick={handleApplyChanges} className="px-3 py-1 bg-primary text-darker rounded hover:bg-primary/80 font-bold">Apply</button>
-            </div>
-          </div>
-          <div className="flex-grow min-h-0"><CodeEditor value={generatedCode} onChange={() => {}} readOnly /></div>
-        </div>
-      );
-    }
-    if (history.length > 0) {
-      return (
-        <div className="p-4 flex-grow overflow-y-auto">
-          <h4 className="font-bold text-light mb-3">Recent Generations</h4>
-          <div className="space-y-2">
-            {history.map(item => (
-              <div key={item.id} onClick={() => { setGeneratedCode(item.code); setPrompt(item.prompt); }} className={`p-3 rounded-lg border cursor-pointer hover:bg-darker/50 transition-colors ${item.applied ? 'border-primary/30 bg-primary/10' : 'border-secondary/20'}`} title="Click to restore this suggestion">
-                <p className="text-light-text font-medium truncate" title={item.prompt}>{item.prompt}</p>
-                <div className="flex justify-between items-center mt-1">
-                  <span className="text-light-text/50 text-xs">{item.timestamp.toLocaleTimeString()}</span>
-                  {item.applied && <span className="text-primary text-xs font-bold px-2 py-0.5 bg-primary/20 rounded-full">Applied</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className="h-full flex flex-col items-center justify-center text-center text-light-text p-4">
-          <Icon name="sparkles" className="w-16 h-16 text-secondary/10" />
-          <h3 className="mt-4 font-bold text-light">AI Assistant Ready</h3>
-          <p className="mt-1 max-w-xs">{originalCode.length > 0 ? "Describe the changes you want to make." : "Select a file to get started."}</p>
-      </div>
-    );
-  };
   
   return (
     <div className="h-full flex flex-col bg-dark text-sm">
-      <div className="p-4 border-b border-secondary/20 shrink-0">
+      <div className="p-3 border-b border-secondary/10 shrink-0">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-light-text flex items-center gap-2">
+            <Icon name="sparkles" className="w-4 h-4 text-primary" />
+            AI Assistant
+          </h2>
+      </div>
+
+      <div className="flex-grow p-4 overflow-y-auto flex flex-col-reverse">
+        <div ref={chatEndRef} />
+        {isGenerating && chatLog[0]?.status === 'pending' && <AiMessage turn={chatLog[0]} onApply={() => {}} onDiscard={() => {}} />}
+        {chatLog.slice(isGenerating ? 1 : 0).map(turn => (
+            <React.Fragment key={turn.id}>
+                <AiMessage turn={turn} onApply={() => handleApplyChanges(turn.id, turn.responseCode)} onDiscard={() => handleDiscard(turn.id)} />
+                <UserMessage turn={turn} />
+            </React.Fragment>
+        ))}
+        {chatLog.length === 0 && !isGenerating && (
+            <div className="h-full flex flex-col items-center justify-center text-center text-light-text p-4 m-auto">
+                <Icon name="sparkles" className="w-16 h-16 text-secondary/10" />
+                <h3 className="mt-4 font-bold text-light">AI Assistant Ready</h3>
+                <p className="mt-1 max-w-xs">{originalCode.length > 0 ? "Describe the changes you want to make." : "Select a file to get started."}</p>
+            </div>
+        )}
+      </div>
+
+      <div className="p-4 border-t border-secondary/20 shrink-0">
+        {uploadedFile && (
+            <div className="mb-2 flex items-center justify-between text-xs bg-darker p-2 rounded-md border border-secondary/20">
+                <div className="flex items-center gap-2 truncate">
+                    <Icon name="fileText" className="w-4 h-4 text-secondary flex-shrink-0" />
+                    <span className="truncate text-light-text" title={uploadedFile.name}>{uploadedFile.name}</span>
+                </div>
+                <button onClick={handleRemoveFile} className="p-1 rounded-full hover:bg-light/10"><Icon name="xCircle" className="w-4 h-4 text-light-text" /></button>
+            </div>
+        )}
         <div className="relative">
             <textarea
               value={prompt} onChange={(e) => setPrompt(e.target.value)}
               placeholder={originalCode.length > 0 ? "e.g., 'give player 3 diamonds on join'" : "Select a Java file to start"}
-              className="w-full bg-darker border border-secondary/20 rounded-lg p-3 pr-10 resize-none focus:outline-none focus:ring-2 focus:ring-secondary disabled:opacity-50"
-              rows={3} disabled={isGenerating || !originalCode.length}
+              className="w-full bg-darker border border-secondary/20 rounded-lg p-3 pr-20 resize-none focus:outline-none focus:ring-2 focus:ring-secondary disabled:opacity-50"
+              rows={2} disabled={isGenerating || !originalCode.length}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && canGenerate) { e.preventDefault(); handleGenerateCode(); } }}
             />
-            <button onClick={toggleListening} title="Use Voice Input" className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors ${isListening ? 'bg-accent/20' : 'hover:bg-secondary/20'}`} disabled={!recognitionRef.current}>
-                <Icon name={isListening ? 'microphoneOff' : 'microphone'} className={`w-5 h-5 ${isListening ? 'text-accent' : 'text-light-text'}`} />
-            </button>
+            <div className="absolute right-2 top-2 flex items-center gap-1">
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.docx,.txt" className="hidden" />
+                <button onClick={handleAttachClick} title="Attach File" className="p-1.5 rounded-full hover:bg-secondary/20" disabled={isGenerating || isFileProcessing}>
+                    {isFileProcessing ? (
+                        <div className="w-5 h-5 border-2 border-light-text/50 border-t-primary rounded-full animate-spin"></div>
+                    ) : (
+                        <Icon name="paperclip" className="w-5 h-5 text-light-text" />
+                    )}
+                </button>
+                <button onClick={toggleListening} title="Use Voice Input" className={`p-1.5 rounded-full transition-colors ${isListening ? 'bg-accent/20' : 'hover:bg-secondary/20'}`} disabled={!recognitionRef.current || isGenerating || isFileProcessing}>
+                    <Icon name={isListening ? 'microphoneOff' : 'microphone'} className={`w-5 h-5 ${isListening ? 'text-accent' : 'text-light-text'}`} />
+                </button>
+            </div>
         </div>
         <button onClick={handleGenerateCode} disabled={!canGenerate} className="w-full mt-2 bg-primary text-darker font-bold py-2.5 px-4 rounded-lg transition-all duration-300 hover:bg-primary/80 disabled:bg-gray-600 disabled:text-light-text/50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-          {isGenerating ? <><div className="w-4 h-4 border-2 border-darker border-t-transparent rounded-full animate-spin"></div>Generating...</> : <><Icon name="sparkles" className="w-4 h-4" />Generate Code</>}
+            <Icon name="sparkles" className="w-4 h-4" />Generate Code
         </button>
-      </div>
-      <div className="flex-grow flex flex-col min-h-0">
-        {renderContent()}
-        {!isGenerating && generatedCode === null && history.length === 0 && (
-            <PromptSuggestions onSelect={setPrompt} />
-        )}
       </div>
     </div>
   );

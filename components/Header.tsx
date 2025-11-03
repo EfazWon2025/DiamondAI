@@ -12,7 +12,14 @@ export const Header: React.FC = () => {
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    const navLinks = ['Features', 'IDE'];
+    const navLinks = [
+        { name: 'Discord', href: '#' },
+        { name: 'Docs', href: '#' },
+        { name: 'Features', href: '#features' },
+        { name: 'IDE', href: '#ide' },
+        { name: 'Privacy', href: '#' },
+        { name: 'Terms', href: '#' }
+    ];
 
     return (
         <header className={`fixed top-0 left-0 w-full flex justify-between items-center px-[5%] z-50 transition-all duration-300 ${scrolled ? 'py-4 bg-darker/90 backdrop-blur-lg border-b border-primary/10' : 'py-5 bg-transparent'}`}>
@@ -23,8 +30,8 @@ export const Header: React.FC = () => {
             <nav className="hidden md:flex items-center">
                 <ul className="flex list-none font-medium">
                     {navLinks.map(item => (
-                        <li key={item} className="ml-8">
-                            <a href={`#${item.replace(' ', '-').toLowerCase()}`} className="text-light-text relative transition-colors duration-300 hover:text-primary after:content-[''] after:absolute after:bottom-[-5px] after:left-0 after:w-0 after:h-[2px] after:bg-primary after:transition-all after:duration-300 hover:after:w-full">{item}</a>
+                        <li key={item.name} className="ml-8">
+                            <a href={item.href} className="text-light-text relative transition-colors duration-300 hover:text-primary after:content-[''] after:absolute after:bottom-[-5px] after:left-0 after:w-0 after:h-[2px] after:bg-primary after:transition-all after:duration-300 hover:after:w-full">{item.name}</a>
                         </li>
                     ))}
                 </ul>

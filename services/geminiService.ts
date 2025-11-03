@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { AIHistoryItem, Project } from '../types';
+import { logger } from './logger';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -73,10 +74,15 @@ export async function generatePluginCode(
     project: Project,
     prompt: string,
     currentCode: string,
-    history: Omit<AIHistoryItem, 'id' | 'timestamp' | 'applied'>[]
+    history: Omit<AIHistoryItem, 'id' | 'timestamp' | 'applied'>[],
+    fileContext?: string | null
 ): Promise<string> {
     try {
-        const fullPrompt = `The user wants to make the following change: "${prompt}"
+        const contextPrompt = fileContext
+            ? `The user has provided the following document as context. Use this information to inform your code generation:\n--- DOCUMENT START ---\n${fileContext}\n--- DOCUMENT END ---\n\n`
+            : '';
+
+        const fullPrompt = `${contextPrompt}The user wants to make the following change: "${prompt}"
 
 This is the current code of the file they are editing:
 ---
@@ -105,7 +111,7 @@ Based on my system instructions, please provide the full, updated code for the e
 
         return code;
     } catch (error) {
-        console.error("Error generating code via Gemini API:", error);
+        logger.error("Error generating code via Gemini API:", error);
         if (error instanceof Error) {
             throw new Error(`Failed to generate code: ${error.message}`);
         }

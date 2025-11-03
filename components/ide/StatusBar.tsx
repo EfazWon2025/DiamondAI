@@ -3,6 +3,10 @@ import { Icon, IconName } from '../Icon';
 
 interface StatusBarProps {
     branch: string;
+    filePath?: string;
+    line?: number;
+    col?: number;
+    status?: string;
 }
 
 const StatusBarItem: React.FC<{ children?: React.ReactNode; icon?: IconName; }> = ({ children, icon }) => (
@@ -12,17 +16,18 @@ const StatusBarItem: React.FC<{ children?: React.ReactNode; icon?: IconName; }> 
     </div>
 );
 
-export const StatusBar: React.FC<StatusBarProps> = ({ branch }) => {
+export const StatusBar: React.FC<StatusBarProps> = ({ branch, filePath, line, col, status }) => {
     return (
         <footer className="bg-dark text-light-text text-xs flex justify-between items-center h-6 border-t border-secondary/10 flex-shrink-0 z-20">
             <div className="flex items-center h-full">
                 <StatusBarItem icon="gitBranch">{branch}</StatusBarItem>
+                {filePath && <StatusBarItem>{filePath}</StatusBarItem>}
             </div>
             <div className="flex items-center h-full">
+                {line && col && <StatusBarItem>Ln {line}, Col {col}</StatusBarItem>}
+                {status && <StatusBarItem>{status}</StatusBarItem>}
                 <StatusBarItem>UTF-8</StatusBarItem>
                 <StatusBarItem>Java</StatusBarItem>
-                <StatusBarItem icon="error">1</StatusBarItem>
-                <StatusBarItem icon="warning">1</StatusBarItem>
                 <StatusBarItem icon="bell" />
             </div>
         </footer>

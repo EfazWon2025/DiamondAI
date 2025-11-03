@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Icon, IconName } from '../Icon';
-import type { ConsoleLogEntry } from '../../types';
+import type { ConsoleLogEntry, LogEntry } from '../../types';
 import { useConsoleStream } from '../../hooks/useConsoleStream';
 import { useVirtualization } from '../../hooks/useVirtualization';
+import { logger } from '../../services/logger';
 
 const GradleTask: React.FC<{ icon: IconName, name: string, description: string }> = ({ icon, name, description }) => (
     <div className="flex items-center gap-3 p-2 rounded-md hover:bg-secondary/10 cursor-pointer">
@@ -65,24 +66,81 @@ const MinecraftConsole: React.FC<{ logs: ConsoleLogEntry[] }> = ({ logs }) => {
     );
 };
 
+const ProblemsPanel: React.FC = () => {
+    const [problems, setProblems] = useState<LogEntry[]>([]);
+
+    useEffect(() => {
+        const unsubscribe = logger.subscribe((allLogs) => {
+            setProblems(allLogs.filter(log => log.level === 'ERROR' || log.level === 'WARN'));
+        });
+        return () => unsubscribe();
+    }, []);
+    
+    const getIcon = (level: 'WARN' | 'ERROR') => {
+        if (level === 'ERROR') return <Icon name="error" className="w-4 h-4 text-accent" />;
+        return <Icon name="warning" className="w-4 h-4 text-yellow-400" />;
+    };
+
+    return (
+        <div className="p-3 text-xs h-full overflow-y-auto">
+            {problems.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-light-text">
+                    No problems have been detected.
+                </div>
+            ) : (
+                <div className="space-y-2 font-mono">
+                    {problems.map((problem, index) => (
+                        <div key={index} className="flex items-start gap-2">
+                            <div className="flex-shrink-0 mt-0.5">{getIcon(problem.level as 'WARN' | 'ERROR')}</div>
+                            <div>
+                                <p className="text-light whitespace-pre-wrap">{problem.message}</p>
+                                {problem.details && (
+                                    <pre className="text-light-text/70 whitespace-pre-wrap text-[10px] mt-1 p-2 bg-dark rounded">{problem.details.split('\n')[0]}</pre>
+                                )}
+                                <p className="text-light-text/50 text-[10px]">{problem.timestamp} [{problem.source || 'System'}]</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 interface BottomPanelProps {
     height: number;
     projectId: string | null;
 }
 
 export const BottomPanel: React.FC<BottomPanelProps> = ({ height, projectId }) => {
-    const [activeTab, setActiveTab] = useState<'gradle' | 'console'>('console');
+    const [activeTab, setActiveTab] = useState<'console' | 'problems' | 'gradle'>('problems');
     const { logs } = useConsoleStream(projectId);
+    const [problemCount, setProblemCount] = useState(0);
+
+    useEffect(() => {
+        const unsubscribe = logger.subscribe((allLogs) => {
+            const newCount = allLogs.filter(log => log.level === 'ERROR' || log.level === 'WARN').length;
+            if (newCount > problemCount) setActiveTab('problems');
+            setProblemCount(newCount);
+        });
+        return () => unsubscribe();
+    }, [problemCount]);
+
 
     return (
         <div style={{ height: `${height}px` }} className="bg-dark flex flex-col flex-shrink-0 min-h-[50px] max-h-[60vh]">
             <div className="flex items-center border-b border-secondary/10 text-xs font-semibold">
-                <button onClick={() => setActiveTab('gradle')} className={`py-2 px-4 ${activeTab === 'gradle' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>GRADLE</button>
                 <button onClick={() => setActiveTab('console')} className={`py-2 px-4 ${activeTab === 'console' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>MINECRAFT CONSOLE</button>
+                <button onClick={() => setActiveTab('problems')} className={`py-2 px-4 flex items-center gap-1.5 ${activeTab === 'problems' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>
+                    PROBLEMS
+                    {problemCount > 0 && <span className="px-1.5 py-0.5 text-xs font-bold rounded-full bg-accent text-light">{problemCount}</span>}
+                </button>
+                <button onClick={() => setActiveTab('gradle')} className={`py-2 px-4 ${activeTab === 'gradle' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>GRADLE</button>
             </div>
             <div className="flex-grow bg-darker overflow-hidden">
                 {activeTab === 'gradle' && <GradlePanel />}
                 {activeTab === 'console' && <MinecraftConsole logs={logs} />}
+                {activeTab === 'problems' && <ProblemsPanel />}
             </div>
         </div>
     );

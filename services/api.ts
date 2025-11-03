@@ -106,13 +106,28 @@ class FileSystemManager {
         }
     }
     
-    private addNodeToTree(root: FileTreeNode, parentPath: string, newNode: FileTreeNode): FileTreeNode {
-        if (root.path === parentPath && root.type === 'folder') {
-            const newChildren = [...(root.children || []), newNode].sort((a, b) => (a.type !== b.type) ? (a.type === 'folder' ? -1 : 1) : a.name.localeCompare(b.name));
+    private traverseAndModify(root: FileTreeNode, targetPath: string, modifyFn: (node: FileTreeNode) => FileTreeNode | null): FileTreeNode | null {
+        if (root.path === targetPath) return modifyFn(root);
+
+        if (root.children) {
+            const newChildren: FileTreeNode[] = [];
+            for (const child of root.children) {
+                const result = this.traverseAndModify(child, targetPath, modifyFn);
+                if (result) newChildren.push(result);
+            }
             return { ...root, children: newChildren };
         }
-        if (root.children) return { ...root, children: root.children.map(child => this.addNodeToTree(child, parentPath, newNode)) };
         return root;
+    }
+    
+    private addNodeToTree(root: FileTreeNode, parentPath: string, newNode: FileTreeNode): FileTreeNode {
+        return this.traverseAndModify(root, parentPath, (node) => {
+            if (node.type === 'folder') {
+                const newChildren = [...(node.children || []), newNode].sort((a, b) => (a.type !== b.type) ? (a.type === 'folder' ? -1 : 1) : a.name.localeCompare(b.name));
+                return { ...node, children: newChildren };
+            }
+            return node;
+        }) as FileTreeNode;
     }
 
     public createFile(projectId: string, filePath: string): { success: boolean; newNode: FileTreeNode } {
@@ -142,6 +157,67 @@ class FileSystemManager {
         this.saveToStorage();
         
         return { success: true, newNode: newFolderNode };
+    }
+
+    public renameNode(projectId: string, oldPath: string, newPath: string): { success: boolean; newFileContents: Record<string, string> } {
+        const projectFS = this.projectsData[projectId];
+        if (!projectFS) return { success: false, newFileContents: {} };
+        const newFileContents = { ...projectFS.fileContents };
+
+        const updatePaths = (node: FileTreeNode, oldBasePath: string, newBasePath: string): FileTreeNode => {
+            const newPath = node.path.replace(oldBasePath, newBasePath);
+            if (newFileContents[node.path] !== undefined) {
+                newFileContents[newPath] = newFileContents[node.path];
+                delete newFileContents[node.path];
+            }
+            const newNode = { ...node, path: newPath, name: newPath.split('/').pop()! };
+            if (newNode.children) {
+                newNode.children = newNode.children.map(child => updatePaths(child, oldBasePath, newBasePath));
+            }
+            return newNode;
+        };
+
+        const newRoot = this.traverseAndModify(projectFS.files, oldPath, (node) => updatePaths(node, oldPath, newPath));
+        if (newRoot) {
+            projectFS.files = newRoot;
+            projectFS.fileContents = newFileContents;
+            this.saveToStorage();
+            return { success: true, newFileContents };
+        }
+        return { success: false, newFileContents: {} };
+    }
+
+    public deleteNode(projectId: string, path: string): { success: boolean } {
+        const projectFS = this.projectsData[projectId];
+        if (!projectFS) return { success: false };
+        
+        const pathsToDelete: string[] = [];
+        const collectPaths = (node: FileTreeNode) => {
+            pathsToDelete.push(node.path);
+            if (node.children) node.children.forEach(collectPaths);
+        };
+
+        const findAndDelete = (root: FileTreeNode, targetPath: string): FileTreeNode | null => {
+            return this.traverseAndModify(root, root.path, (node) => {
+                 if (node.children) {
+                     const childToDelete = node.children.find(c => c.path === targetPath);
+                     if (childToDelete) collectPaths(childToDelete);
+                     const newChildren = node.children.filter(c => c.path !== targetPath);
+                     return { ...node, children: newChildren.map(c => findAndDelete(c, targetPath)!).filter(Boolean) };
+                 }
+                 return node;
+            });
+        };
+
+        const newRoot = findAndDelete(projectFS.files, path);
+        
+        if (newRoot) {
+            projectFS.files = newRoot;
+            pathsToDelete.forEach(p => delete projectFS.fileContents[p]);
+            this.saveToStorage();
+            return { success: true };
+        }
+        return { success: false };
     }
 }
 
@@ -180,6 +256,16 @@ export async function createFolder(projectId: string, folderPath: string): Promi
     return fileSystemManager.createFolder(projectId, folderPath);
 }
 
+export async function renameFileOrFolder(projectId: string, oldPath: string, newPath: string): Promise<{ success: boolean; newFileContents: Record<string, string> }> {
+    await simulateDelay(200);
+    return fileSystemManager.renameNode(projectId, oldPath, newPath);
+}
+
+export async function deleteFileOrFolder(projectId: string, path: string): Promise<{ success: boolean }> {
+    await simulateDelay(200);
+    return fileSystemManager.deleteNode(projectId, path);
+}
+
 export async function executeBuildCommand(projectId: string, command: string): Promise<{message: string}> {
     await simulateDelay(1000);
     return { message: `Command ${command} executed for ${projectId}.` };
@@ -194,7 +280,6 @@ export async function compileProject(projectId: string): Promise<BuildResult> {
         message: success ? 'Compilation successful!' : 'Compilation failed. See console for details.',
         downloadUrl: success ? `/api/projects/${projectId}/download/build_${Date.now()}` : undefined,
         fileName: success ? `${projectId}.jar` : undefined,
-        // FIX: Added missing property 'compatibleServers' to satisfy the BuildResult type.
         compatibleServers: success ? ['Paper 1.20.x', 'Spigot 1.20.x'] : [],
         fileSize: success ? 12345 : undefined,
     };
