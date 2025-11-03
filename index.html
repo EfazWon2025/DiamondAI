@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Diamond AI - AI-Powered Minecraft & Discord Development</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #0F0F1B;
+        color: #F8F9FA;
+      }
+      .font-poppins { font-family: 'Poppins', sans-serif; }
+      .font-inter { font-family: 'Inter', sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', monospace; }
+    </style>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            typography: (theme) => ({
+                invert: {
+                    css: {
+                        '--tw-prose-body': theme('colors.light-text'),
+                        '--tw-prose-headings': theme('colors.light'),
+                        '--tw-prose-lead': theme('colors.light-text'),
+                        '--tw-prose-links': theme('colors.primary'),
+                        '--tw-prose-bold': theme('colors.light'),
+                        '--tw-prose-counters': theme('colors.light-text'),
+                        '--tw-prose-bullets': theme('colors.secondary'),
+                        '--tw-prose-hr': theme('colors.secondary/20'),
+                        '--tw-prose-quotes': theme('colors.light'),
+                        '--tw-prose-quote-borders': theme('colors.secondary'),
+                        '--tw-prose-captions': theme('colors.light-text'),
+                        '--tw-prose-code': theme('colors.secondary'),
+                        '--tw-prose-pre-code': theme('colors.light-text'),
+                        '--tw-prose-pre-bg': 'transparent',
+                        '--tw-prose-th-borders': theme('colors.secondary/20'),
+                        '--tw-prose-td-borders': theme('colors.secondary/10'),
+                    },
+                },
+            }),
+            colors: {
+              primary: '#00FF88',   // Minecraft Green
+              secondary: '#7B68EE',  // Royal Purple
+              dark: '#1A1A2E',      // Space Cadet
+              darker: '#0F0F1B',    // Deep Space
+              light: '#F8F9FA',     // Pure White
+              accent: '#FF6B6B',     // Coral Red
+              'light-text': '#b8b8d1'
+            },
+            fontFamily: {
+                sans: ['Inter', 'sans-serif'],
+                poppins: ['Poppins', 'sans-serif'],
+                mono: ['JetBrains Mono', 'monospace'],
+            },
+            keyframes: {
+              fadeInUp: {
+                '0%': { opacity: '0', transform: 'translateY(30px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0px)' },
+                '50%': { transform: 'translateY(-20px)' },
+              },
+              backgroundPan: {
+                '0%': { 'background-position': '0% 50%' },
+                '100%': { 'background-position': '100% 50%' },
+              }
+            },
+            animation: {
+              fadeInUp: 'fadeInUp 1s ease-out forwards',
+              float: 'float 6s ease-in-out infinite',
+              backgroundPan: 'backgroundPan 10s linear infinite alternate',
+            }
+          }
+        },
+        plugins: [
+            tailwind.plugin(function({addBase, theme}) {
+                addBase({
+                    'h1': {fontSize: theme('fontSize.4xl')},
+                    'h2': {fontSize: theme('fontSize.3xl')},
+                    'h3': {fontSize: theme('fontSize.2xl')},
+                })
+            }),
+            // require('@tailwindcss/typography'),
+        ]
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+    "https://esm.sh/react-markdown@9": "https://esm.sh/react-markdown@9"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
