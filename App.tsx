@@ -6,11 +6,10 @@ import { createProject as apiCreateProject } from './services/api';
 const LandingPage = lazy(() => import('./components/LandingPage'));
 const ProjectModal = lazy(() => import('./components/ProjectModal'));
 const IdeView = lazy(() => import('./components/IdeView'));
-const EnterpriseDashboard = lazy(() => import('./components/EnterpriseDashboard'));
 
 
 const App: React.FC = () => {
-    const [view, setView] = useState<'landing' | 'ide' | 'enterprise'>('landing');
+    const [view, setView] = useState<'landing' | 'ide'>('landing');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [project, setProject] = useState<Project | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -26,8 +25,6 @@ const App: React.FC = () => {
     const handleGetStarted = () => setIsModalOpen(true);
     const handleCloseModal = () => setIsModalOpen(false);
     const handleExitIde = () => { setProject(null); setView('landing'); };
-    const handleGoToEnterprise = () => setView('enterprise');
-    const handleExitEnterprise = () => setView('landing');
     
     const handleCreateProject = async (projectDetails: Omit<Project, 'id' | 'createdAt'>) => {
         try {
@@ -52,9 +49,8 @@ const App: React.FC = () => {
     return (
         <div className="bg-darker text-light min-h-screen font-inter">
             <Suspense fallback={<LoadingFallback />}>
-                {view === 'landing' && <LandingPage onGetStarted={handleGetStarted} onGoToEnterprise={handleGoToEnterprise} />}
+                {view === 'landing' && <LandingPage onGetStarted={handleGetStarted} />}
                 {view === 'ide' && project && <IdeView project={project} onExit={handleExitIde} addToast={addToast} />}
-                {view === 'enterprise' && <EnterpriseDashboard onExit={handleExitEnterprise} />}
                 {isModalOpen && <ProjectModal onClose={handleCloseModal} onCreate={handleCreateProject} />}
             </Suspense>
 
