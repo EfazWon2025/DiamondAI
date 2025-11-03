@@ -14,7 +14,7 @@ interface LandingPageProps {
     onGoToEnterprise: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onGoToEnterprise }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onGoToEnterprise }) => {
     return (
         <main className="overflow-x-hidden">
             <Header onGoToEnterprise={onGoToEnterprise} />
@@ -29,3 +29,5 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onGoToEn
         </main>
     );
 };
+
+export default LandingPage;

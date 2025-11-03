@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DiamondIcon } from './icons/DiamondIcon';
+import { Icon } from './Icon';
 
 interface HeaderProps {
     onGoToEnterprise: () => void;
@@ -21,7 +21,7 @@ export const Header: React.FC<HeaderProps> = ({ onGoToEnterprise }) => {
     return (
         <header className={`fixed top-0 left-0 w-full flex justify-between items-center px-[5%] z-50 transition-all duration-300 ${scrolled ? 'py-4 bg-darker/90 backdrop-blur-lg border-b border-primary/10' : 'py-5 bg-transparent'}`}>
             <a href="#" className="flex items-center text-3xl font-poppins font-bold text-light no-underline">
-                <DiamondIcon className="w-8 h-8 text-primary mr-2" />
+                <Icon name="diamond" className="w-8 h-8 text-primary mr-2" />
                 Diamond<span className="text-primary">AI</span>
             </a>
             <nav className="hidden md:flex items-center">

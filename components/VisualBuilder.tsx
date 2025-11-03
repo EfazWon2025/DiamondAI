@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Block, WorkspaceBlock } from '../types';
-import { PuzzleIcon } from './icons/IdeIcons';
+import { Icon } from './Icon';
 
 const TOOLBOX_BLOCKS: Block[] = [
     { 
@@ -77,7 +77,7 @@ export const VisualBuilder: React.FC<VisualBuilderProps> = ({ onBlockDrop }) => 
                                     onDragStart={(e) => handleDragStart(e, block)}
                                     className="p-2 rounded-md bg-darker border border-secondary/20 cursor-grab flex items-center gap-2 hover:border-primary transition-colors"
                                 >
-                                    <PuzzleIcon className={`w-4 h-4 flex-shrink-0 ${color}`} />
+                                    <Icon name="puzzle" className={`w-4 h-4 flex-shrink-0 ${color}`} />
                                     <span className="text-xs font-semibold text-light">{block.name}</span>
                                 </div>
                             ))}
@@ -92,7 +92,7 @@ export const VisualBuilder: React.FC<VisualBuilderProps> = ({ onBlockDrop }) => 
             >
                 {workspaceBlocks.length === 0 ? (
                     <div className="m-auto text-center bg-dark/80 backdrop-blur-sm p-8 rounded-lg">
-                        <PuzzleIcon className="w-16 h-16 text-secondary mx-auto mb-4"/>
+                        <Icon name="puzzle" className="w-16 h-16 text-secondary mx-auto mb-4"/>
                         <h3 className="text-2xl font-poppins font-bold">Visual Builder</h3>
                         <p className="text-light-text mt-2">Drag and drop blocks from the toolbox to build your plugin logic.</p>
                     </div>
@@ -100,7 +100,7 @@ export const VisualBuilder: React.FC<VisualBuilderProps> = ({ onBlockDrop }) => 
                     workspaceBlocks.map(wsBlock => (
                         <div key={wsBlock.id} className="p-3 mb-2 rounded-lg bg-dark border border-secondary/30 shadow-lg animate-[fadeInUp_0.3s_ease-out]">
                              <h4 className={`text-sm font-bold flex items-center gap-2 ${categories[wsBlock.block.category].color}`}>
-                                <PuzzleIcon className="w-4 h-4" /> {wsBlock.block.name}
+                                <Icon name="puzzle" className="w-4 h-4" /> {wsBlock.block.name}
                             </h4>
                         </div>
                     ))

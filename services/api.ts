@@ -5,169 +5,210 @@ import type {
     MinecraftPlatform
 } from '../types';
 
-// In a real app, this would point to the backend server.
-const API_BASE_URL = 'http://localhost:3001/api'; 
-
-// --- Project ---
-export async function createProject(projectDetails: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
-    // This is a placeholder. A real implementation would post to the backend
-    // and receive a new project object with a database-generated ID.
-    console.log("Simulating project creation via API:", projectDetails);
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-    return {
-        ...projectDetails,
-        id: `proj_${Date.now()}`,
-        createdAt: new Date().toISOString(),
-    };
+interface ProjectFileSystem {
+    files: FileTreeNode;
+    fileContents: Record<string, string>;
 }
 
-// --- Files ---
-export async function getProjectFiles(projectId: string): Promise<FileTreeNode> {
-     console.log(`Fetching files for project ${projectId} from API...`);
-     // This mock returns a structure similar to the original hardcoded one.
-     // A real backend would construct this from the actual file system.
-     await new Promise(resolve => setTimeout(resolve, 500));
-     const safeProjectName = projectId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-     return {
-        name: projectId,
-        type: 'folder',
-        path: '/',
-        children: [
-            {
-                name: 'src', type: 'folder', path: 'src', children: [
-                    { name: 'main', type: 'folder', path: 'src/main', children: [
-                        { name: 'java', type: 'folder', path: 'src/main/java', children: [
-                             { name: 'com', type: 'folder', path: 'src/main/java/com', children: [
-                                { name: 'example', type: 'folder', path: 'src/main/java/com/example', children: [
-                                     { name: safeProjectName, type: 'folder', path: `src/main/java/com/example/${safeProjectName}`, children: [
-                                        { name: `${safeProjectName.charAt(0).toUpperCase() + safeProjectName.slice(1)}.java`, type: 'file', path: `src/main/java/com/example/${safeProjectName}/${safeProjectName.charAt(0).toUpperCase() + safeProjectName.slice(1)}.java`, fileType: 'java' }
-                                     ]}
-                                ]}
-                            ]}
-                        ]},
-                        { name: 'resources', type: 'folder', path: 'src/main/resources', children: [
-                             { name: 'mods.toml', type: 'file', path: 'src/main/resources/mods.toml', fileType: 'toml' }
-                        ]}
-                    ]}
-                ]
-            },
-            { name: 'build.gradle', type: 'file', path: 'build.gradle', fileType: 'gradle' }
-        ]
-    };
-}
+class FileSystemManager {
+    private projectsData: Record<string, ProjectFileSystem> = {};
+    private readonly storageKey = 'diamond_ai_file_system';
 
-export async function getFileContent(projectId: string, filePath: string, platform: MinecraftPlatform, projectName: string): Promise<string> {
-    console.log(`Fetching content for file ${filePath} from API for project ${projectId} (${platform})...`);
-    await new Promise(resolve => setTimeout(resolve, 200));
+    constructor() { this.loadFromStorage(); }
 
-    const safeProjectName = projectName.replace(/[^a-zA-Z0-9]/g, '');
-    const mainClassName = safeProjectName.charAt(0).toUpperCase() + safeProjectName.slice(1);
-    const packageName = `com.example.${safeProjectName.toLowerCase()}`;
+    private loadFromStorage() {
+        try {
+            const storedData = localStorage.getItem(this.storageKey);
+            if (storedData) this.projectsData = JSON.parse(storedData);
+        } catch (error) {
+            console.error("Failed to load file system from localStorage:", error);
+            this.projectsData = {};
+        }
+    }
 
-    if (filePath.endsWith('.java')) {
+    private saveToStorage() {
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(this.projectsData));
+        } catch (error) {
+            console.error("Failed to save file system to localStorage:", error);
+        }
+    }
+
+    private generateInitialStructureAndContent({ name, platform }: Project): ProjectFileSystem {
+        const safeName = name.replace(/[^a-zA-Z0-9]/g, '');
+        const lowerName = safeName.toLowerCase();
+        const mainClass = safeName.charAt(0).toUpperCase() + safeName.slice(1);
+        const mainFile = `${mainClass}.java`;
+        const pkg = `com.example.${lowerName}`;
+        const basePath = name;
+        const pkgPath = `src/main/java/${pkg.replace(/\./g, '/')}`;
+        const resPath = 'src/main/resources';
+
+        const createDirs = (path: string, parts: string[]): FileTreeNode => {
+            const currentPart = parts.shift();
+            if (!currentPart) return { name: '', type: 'folder', path: '', children: [] }; // Should not happen
+            const currentPath = path ? `${path}/${currentPart}` : currentPart;
+            return {
+                name: currentPart, type: 'folder', path: currentPath,
+                children: parts.length > 0 ? [createDirs(currentPath, parts)] : []
+            };
+        };
+        
+        const mainJavaFileFullPath = `${basePath}/${pkgPath}/${mainFile}`;
+        const javaDirs = createDirs(basePath, ['src', 'main', 'java', 'com', 'example', lowerName]);
+        const mainJavaFile: FileTreeNode = { name: mainFile, type: 'file', path: mainJavaFileFullPath, fileType: 'java' };
+        
+        let currentFolder = javaDirs;
+        while(currentFolder.children && currentFolder.children.length > 0) currentFolder = currentFolder.children[0];
+        currentFolder.children?.push(mainJavaFile);
+
+        const files: FileTreeNode = { name: basePath, type: 'folder', path: basePath, children: [
+            javaDirs,
+            { name: 'resources', type: 'folder', path: `${basePath}/src/main/resources`, children: [
+                { name: 'mods.toml', type: 'file', path: `${basePath}/${resPath}/mods.toml`, fileType: 'toml' }
+            ]},
+            { name: 'build.gradle', type: 'file', path: `${basePath}/build.gradle`, fileType: 'gradle' }
+        ]};
+
+        const fileContents: Record<string, string> = {};
+        let mainClassContent = '';
         switch (platform) {
             case 'forge':
             case 'neoforge':
-                return `package ${packageName};
-
-import com.mojang.logging.LogUtils;
-import net.minecraftforge.fml.common.Mod;
-import org.slf4j.Logger;
-
-@Mod("${safeProjectName.toLowerCase()}")
-public class ${mainClassName} {
-    private static final Logger LOGGER = LogUtils.getLogger();
-
-    public ${mainClassName}() {
-        LOGGER.info("Hello from ${mainClassName}!");
-    }
-}`;
+                mainClassContent = `package ${pkg};\n\nimport net.minecraftforge.fml.common.Mod;\n\n@Mod("${lowerName}")\npublic class ${mainClass} {\n    public ${mainClass}() {}\n}`;
+                break;
             case 'fabric':
-                return `package ${packageName};
-
-import net.fabricmc.api.ModInitializer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class ${mainClassName} implements ModInitializer {
-    public static final Logger LOGGER = LoggerFactory.getLogger("${safeProjectName.toLowerCase()}");
-
-	@Override
-	public void onInitialize() {
-        LOGGER.info("Hello from ${mainClassName}!");
-	}
-}`;
-            case 'spigot':
-            case 'paper':
-            case 'bukkit':
-                return `package ${packageName};
-
-import org.bukkit.plugin.java.JavaPlugin;
-
-public final class ${mainClassName} extends JavaPlugin {
-    @Override
-    public void onEnable() {
-        getLogger().info("Enabled ${mainClassName}!");
-    }
-
-    @Override
-    public void onDisable() {
-        // Plugin shutdown logic
-    }
-}`;
+                mainClassContent = `package ${pkg};\n\nimport net.fabricmc.api.ModInitializer;\n\npublic class ${mainClass} implements ModInitializer {\n\t@Override\n\tpublic void onInitialize() {}\n}`;
+                break;
             default:
-                 return `// Default Java template for ${filePath}`;
+                mainClassContent = `package ${pkg};\n\nimport org.bukkit.plugin.java.JavaPlugin;\n\npublic final class ${mainClass} extends JavaPlugin {\n    @Override\n    public void onEnable() {}\n}`;
+        }
+        fileContents[mainJavaFileFullPath] = mainClassContent;
+        fileContents[`${basePath}/build.gradle`] = `// build.gradle for ${name}`;
+        fileContents[`${basePath}/${resPath}/mods.toml`] = `# mods.toml for ${name}`;
+        
+        return { files, fileContents };
+    }
+    
+    public initializeProject(project: Project) {
+        if (!this.projectsData[project.id]) {
+            this.projectsData[project.id] = this.generateInitialStructureAndContent(project);
+            this.saveToStorage();
         }
     }
-    if (filePath.endsWith('.gradle')) return `// build.gradle content for a ${platform} project.\nplugins { id 'java' }`;
-    return `// Content for ${filePath}`;
+
+    public getProjectFiles(projectId: string): FileTreeNode { return this.projectsData[projectId]?.files; }
+    public getFileContent(projectId: string, filePath: string): string { return this.projectsData[projectId]?.fileContents[filePath] ?? ''; }
+    public writeFileContent(projectId: string, filePath: string, content: string) {
+        if (this.projectsData[projectId]) {
+            this.projectsData[projectId].fileContents[filePath] = content;
+            this.saveToStorage();
+        }
+    }
+    
+    private addNodeToTree(root: FileTreeNode, parentPath: string, newNode: FileTreeNode): FileTreeNode {
+        if (root.path === parentPath && root.type === 'folder') {
+            const newChildren = [...(root.children || []), newNode].sort((a, b) => (a.type !== b.type) ? (a.type === 'folder' ? -1 : 1) : a.name.localeCompare(b.name));
+            return { ...root, children: newChildren };
+        }
+        if (root.children) return { ...root, children: root.children.map(child => this.addNodeToTree(child, parentPath, newNode)) };
+        return root;
+    }
+
+    public createFile(projectId: string, filePath: string): { success: boolean; newNode: FileTreeNode } {
+        const pathParts = filePath.split('/');
+        const name = pathParts.pop()!;
+        const parentPath = pathParts.join('/');
+        const ext = name.split('.').pop() as FileTreeNode['fileType'];
+        const fileTypeMap: Record<string, FileTreeNode['fileType']> = { java: 'java', yml: 'yml', json: 'json', png: 'png', gradle: 'gradle', toml: 'toml', properties: 'properties' };
+        const newFileNode: FileTreeNode = { name, path: filePath, type: 'file', fileType: fileTypeMap[ext!] || 'unknown' };
+
+        const projectFS = this.projectsData[projectId];
+        projectFS.files = this.addNodeToTree(projectFS.files, parentPath, newFileNode);
+        projectFS.fileContents[filePath] = '';
+        this.saveToStorage();
+
+        return { success: true, newNode: newFileNode };
+    }
+
+    public createFolder(projectId: string, folderPath: string): { success: boolean; newNode: FileTreeNode } {
+        const pathParts = folderPath.split('/');
+        const name = pathParts.pop()!;
+        const parentPath = pathParts.join('/');
+        const newFolderNode: FileTreeNode = { name, path: folderPath, type: 'folder', children: [] };
+        
+        const projectFS = this.projectsData[projectId];
+        projectFS.files = this.addNodeToTree(projectFS.files, parentPath, newFolderNode);
+        this.saveToStorage();
+        
+        return { success: true, newNode: newFolderNode };
+    }
 }
 
+const fileSystemManager = new FileSystemManager();
+const simulateDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+export async function createProject(projectDetails: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
+    await simulateDelay(500);
+    const newProject = { ...projectDetails, id: `proj_${Date.now()}`, createdAt: new Date().toISOString() };
+    fileSystemManager.initializeProject(newProject);
+    return newProject;
+}
+
+export async function getProjectFiles(projectId: string): Promise<FileTreeNode> {
+    await simulateDelay(200);
+    return fileSystemManager.getProjectFiles(projectId);
+}
+
+export async function getFileContent(projectId: string, filePath: string): Promise<string> {
+    await simulateDelay(100);
+    return fileSystemManager.getFileContent(projectId, filePath);
+}
 
 export async function writeFileContent(projectId: string, filePath: string, content: string): Promise<void> {
-    console.log(`Writing ${content.length} chars to ${filePath} via API for project ${projectId}...`);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    // In a real app, a PUT request would be sent here.
+    await simulateDelay(100);
+    fileSystemManager.writeFileContent(projectId, filePath, content);
 }
 
-// --- Build ---
+export async function createFile(projectId: string, filePath: string): Promise<{ success: boolean; newNode: FileTreeNode }> {
+    await simulateDelay(200);
+    return fileSystemManager.createFile(projectId, filePath);
+}
+
+export async function createFolder(projectId: string, folderPath: string): Promise<{ success: boolean; newNode: FileTreeNode }> {
+    await simulateDelay(200);
+    return fileSystemManager.createFolder(projectId, folderPath);
+}
+
 export async function executeBuildCommand(projectId: string, command: string): Promise<{message: string}> {
-    console.log(`Executing command '${command}' for project ${projectId} via API...`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return { message: `Command ${command} executed successfully.` };
+    await simulateDelay(1000);
+    return { message: `Command ${command} executed for ${projectId}.` };
 }
 
 export async function compileProject(projectId: string): Promise<BuildResult> {
-    console.log(`Compiling project ${projectId} via API...`);
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await simulateDelay(3000);
+    const success = Math.random() > 0.2; // 80% success rate
     return {
-        success: true,
+        success,
         buildId: `build_${Date.now()}`,
-        message: 'Compilation successful!',
-        downloadUrl: `/api/projects/${projectId}/download/build_${Date.now()}`,
-        fileName: `${projectId}.jar`,
-        fileSize: 12345,
-        compatibleServers: ['Forge', 'Spigot']
+        message: success ? 'Compilation successful!' : 'Compilation failed. See console for details.',
+        downloadUrl: success ? `/api/projects/${projectId}/download/build_${Date.now()}` : undefined,
+        fileName: success ? `${projectId}.jar` : undefined,
+        // FIX: Added missing property 'compatibleServers' to satisfy the BuildResult type.
+        compatibleServers: success ? ['Paper 1.20.x', 'Spigot 1.20.x'] : [],
+        fileSize: success ? 12345 : undefined,
     };
 }
 
 export async function downloadBuild(projectId: string, buildId: string, fileName: string): Promise<void> {
-    console.log(`Downloading build ${buildId} for project ${projectId}...`);
-    
-    // Simulate fetching the file blob from a server endpoint
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const dummyJarContent = `This is a simulated JAR file for ${fileName}. It was generated for project ${projectId}.`;
-    const blob = new Blob([dummyJarContent], { type: 'application/java-archive' });
-    
-    // Create a temporary link element and trigger the download
+    await simulateDelay(500);
+    const blob = new Blob([`This is a simulated JAR file for ${fileName}.`], { type: 'application/java-archive' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
-    
-    // Clean up the temporary link and element
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
 }

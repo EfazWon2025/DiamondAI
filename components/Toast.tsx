@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { ToastMessage } from '../types';
-import { CheckCircle2Icon, XCircleIcon } from './icons/IdeIcons';
-import { InfoIcon } from './icons/InfoIcon'; // Assuming a generic info icon exists
+import { Icon } from './Icon';
 
 interface ToastProps {
     toast: ToastMessage;
@@ -25,9 +24,9 @@ export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
     };
     
     const icons = {
-        success: <CheckCircle2Icon className="w-6 h-6 text-primary" />,
-        info: <InfoIcon className="w-6 h-6 text-secondary" />,
-        error: <XCircleIcon className="w-6 h-6 text-accent" />
+        success: <Icon name="checkCircle2" className="w-6 h-6 text-primary" />,
+        info: <Icon name="info" className="w-6 h-6 text-secondary" />,
+        error: <Icon name="xCircle" className="w-6 h-6 text-accent" />
     };
     
     const borderColors = {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RocketIcon } from './icons/RocketIcon';
+import { Icon } from './Icon';
 
 const getCycleClass = () => {
     const hour = new Date().getHours();
@@ -54,7 +54,7 @@ export const Hero: React.FC<{ onGetStarted: () => void; }> = ({ onGetStarted }) 
                 </p>
                 <div className="flex flex-col items-center gap-6 animate-[fadeInUp_1s_ease-out_0.4s]">
                     <button onClick={onGetStarted} className="w-full max-w-sm flex items-center justify-center gap-3 bg-primary text-darker py-4 px-8 rounded-full font-bold text-lg transition-all duration-300 hover:bg-primary/90 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/40">
-                        <RocketIcon className="w-6 h-6" />
+                        <Icon name="rocket" className="w-6 h-6" />
                         Create Your First Plugin - FREE
                     </button>
                     <div className="text-sm text-light-text">

@@ -1,7 +1,5 @@
 import React from 'react';
-// FIX: Import PlayCircleIcon from its own file and alias it to PlayIcon. Remove unused FolderPlusIcon import.
-import { FileCodeIcon, SearchIcon, GitBranchIcon, BugIcon, SettingsIcon, SaveIcon } from './icons/IdeIcons';
-import { PlayCircleIcon as PlayIcon } from './icons/PlayCircleIcon';
+import { Icon } from './Icon';
 
 const CodeLine: React.FC<{ number: number; children?: React.ReactNode }> = ({ number, children }) => (
     <div className="flex text-sm">
@@ -36,17 +34,17 @@ export const IdePreview: React.FC = () => {
                 </div>
                 <div className="flex">
                     <div className="w-16 bg-dark flex flex-col items-center py-5 gap-6 border-r border-secondary/10">
-                        <FileCodeIcon className="w-6 h-6 text-secondary" />
-                        <SearchIcon className="w-6 h-6 text-light-text/70 hover:text-light" />
-                        <GitBranchIcon className="w-6 h-6 text-light-text/70 hover:text-light" />
-                        <BugIcon className="w-6 h-6 text-light-text/70 hover:text-light" />
-                        <SettingsIcon className="w-6 h-6 text-light-text/70 hover:text-light mt-auto" />
+                        <Icon name="fileCode" className="w-6 h-6 text-secondary" />
+                        <Icon name="search" className="w-6 h-6 text-light-text/70 hover:text-light" />
+                        <Icon name="gitBranch" className="w-6 h-6 text-light-text/70 hover:text-light" />
+                        <Icon name="bug" className="w-6 h-6 text-light-text/70 hover:text-light" />
+                        <Icon name="settings" className="w-6 h-6 text-light-text/70 hover:text-light mt-auto" />
                     </div>
                     <div className="flex-1">
                         <div className="bg-dark p-3 flex justify-between items-center border-b border-secondary/10">
                             <div className="flex gap-4">
-                                <div className="flex items-center gap-2 text-sm text-light-text hover:text-light cursor-pointer"><PlayIcon className="w-4 h-4" /> Run</div>
-                                <div className="flex items-center gap-2 text-sm text-light-text hover:text-light cursor-pointer"><SaveIcon className="w-4 h-4" /> Save</div>
+                                <div className="flex items-center gap-2 text-sm text-light-text hover:text-light cursor-pointer"><Icon name="playCircle" className="w-4 h-4" /> Run</div>
+                                <div className="flex items-center gap-2 text-sm text-light-text hover:text-light cursor-pointer"><Icon name="save" className="w-4 h-4" /> Save</div>
                             </div>
                             <div className="flex items-center gap-2 text-sm">
                                 <span className="text-light-text">Theme:</span>

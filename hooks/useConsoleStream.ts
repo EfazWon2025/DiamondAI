@@ -25,8 +25,6 @@ export const useConsoleStream = (projectId: string | null) => {
         }]);
 
         let messageCount = 0;
-        // FIX: Explicitly type the `messages` array to ensure `level` is of type `ConsoleLogEntry['level']`,
-        // resolving the type error where a generic `string` was inferred.
         const messages: Omit<ConsoleLogEntry, 'timestamp'>[] = [
             { level: 'INFO', message: 'Backend library: LWJGL version 3.3.1 SNAPSHOT', source: 'main' },
             { level: 'INFO', message: 'MinecraftForge v43.2.0 Initialized', source: 'main' },

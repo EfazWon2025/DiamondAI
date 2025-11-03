@@ -1,5 +1,5 @@
 import React from 'react';
-import { TwitterIcon, DiscordIcon, GithubIcon } from './icons/SocialIcons';
+import { Icon } from './Icon';
 
 const FooterLink: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
     <li><a href={href} className="text-light-text hover:text-primary transition-colors duration-300">{children}</a></li>
@@ -17,9 +17,9 @@ export const Footer: React.FC<FooterProps> = ({ onGoToEnterprise }) => {
                     <h3 className="text-2xl font-poppins font-bold mb-4">Diamond AI</h3>
                     <p className="text-light-text mb-6">The definitive way to create Minecraft plugins with AI.</p>
                     <div className="flex gap-4">
-                        <a href="#" className="w-10 h-10 bg-darker rounded-full flex items-center justify-center text-light-text hover:bg-secondary hover:text-light transition-all duration-300"><TwitterIcon className="w-5 h-5" /></a>
-                        <a href="#" className="w-10 h-10 bg-darker rounded-full flex items-center justify-center text-light-text hover:bg-secondary hover:text-light transition-all duration-300"><DiscordIcon className="w-5 h-5" /></a>
-                        <a href="#" className="w-10 h-10 bg-darker rounded-full flex items-center justify-center text-light-text hover:bg-secondary hover:text-light transition-all duration-300"><GithubIcon className="w-5 h-5" /></a>
+                        <a href="#" className="w-10 h-10 bg-darker rounded-full flex items-center justify-center text-light-text hover:bg-secondary hover:text-light transition-all duration-300"><Icon name="twitter" className="w-5 h-5" /></a>
+                        <a href="#" className="w-10 h-10 bg-darker rounded-full flex items-center justify-center text-light-text hover:bg-secondary hover:text-light transition-all duration-300"><Icon name="discord" className="w-5 h-5" /></a>
+                        <a href="#" className="w-10 h-10 bg-darker rounded-full flex items-center justify-center text-light-text hover:bg-secondary hover:text-light transition-all duration-300"><Icon name="github" className="w-5 h-5" /></a>
                     </div>
                 </div>
                 <div>

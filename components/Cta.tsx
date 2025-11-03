@@ -1,5 +1,5 @@
 import React from 'react';
-import { RocketIcon } from './icons/RocketIcon';
+import { Icon } from './Icon';
 
 interface CtaProps {
     onGetStarted: () => void;
@@ -13,7 +13,7 @@ export const Cta: React.FC<CtaProps> = ({ onGetStarted }) => {
                 Go from idea to a fully functional Minecraft plugin in minutes. No setup required.
             </p>
             <button onClick={onGetStarted} className="flex items-center gap-3 bg-primary text-darker py-4 px-8 rounded-full font-bold text-lg transition-all duration-300 hover:bg-primary/90 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/40 mx-auto">
-                <RocketIcon className="w-6 h-6" />
+                <Icon name="rocket" className="w-6 h-6" />
                 Get Started For Free
             </button>
         </section>
