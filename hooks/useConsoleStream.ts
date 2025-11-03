@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { ConsoleLogEntry } from '../types';
 
+const MAX_LOGS = 200;
+
 /**
  * Simulates a WebSocket connection for receiving console logs for a specific project.
  * In a real application, this would connect to a WebSocket server.
@@ -38,7 +40,7 @@ export const useConsoleStream = (projectId: string | null) => {
                     ...messages[messageCount],
                     timestamp: new Date().toLocaleTimeString(),
                 };
-                 setLogs(prevLogs => [...prevLogs, mockLog]);
+                 setLogs(prevLogs => [...prevLogs, mockLog].slice(-MAX_LOGS));
                  messageCount++;
             }
         }, 1500);

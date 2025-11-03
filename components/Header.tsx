@@ -36,8 +36,8 @@ export const Header: React.FC<HeaderProps> = ({ onGoToEnterprise }) => {
             <div className="flex items-center gap-4">
                 <div className="hidden sm:flex items-center">
                     <div className="flex -space-x-2 overflow-hidden">
-                        <img className="inline-block h-8 w-8 rounded-full ring-2 ring-darker" src="https://randomuser.me/api/portraits/women/71.jpg" alt="User 1"/>
-                        <img className="inline-block h-8 w-8 rounded-full ring-2 ring-darker" src="https://randomuser.me/api/portraits/men/32.jpg" alt="User 2"/>
+                        <img loading="lazy" className="inline-block h-8 w-8 rounded-full ring-2 ring-darker" src="https://randomuser.me/api/portraits/women/71.jpg" alt="User 1"/>
+                        <img loading="lazy" className="inline-block h-8 w-8 rounded-full ring-2 ring-darker" src="https://randomuser.me/api/portraits/men/32.jpg" alt="User 2"/>
                         <div className="h-8 w-8 rounded-full ring-2 ring-darker bg-secondary flex items-center justify-center text-xs font-bold">+3</div>
                     </div>
                 </div>

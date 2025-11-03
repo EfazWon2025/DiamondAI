@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { LandingPage } from './components/LandingPage';
-import { ProjectModal } from './components/ProjectModal';
-import { IdeView } from './components/IdeView';
-import { EnterpriseDashboard } from './components/EnterpriseDashboard';
+import React, { useState, lazy, Suspense } from 'react';
 import type { Project, ToastMessage } from './types';
 import { Toast } from './components/Toast';
 import { createProject as apiCreateProject } from './services/api';
+
+const LandingPage = lazy(() => import('./components/LandingPage').then(m => ({ default: m.LandingPage })));
+const ProjectModal = lazy(() => import('./components/ProjectModal').then(m => ({ default: m.ProjectModal })));
+const IdeView = lazy(() => import('./components/IdeView').then(m => ({ default: m.IdeView })));
+const EnterpriseDashboard = lazy(() => import('./components/EnterpriseDashboard').then(m => ({ default: m.EnterpriseDashboard })));
+
 
 const App: React.FC = () => {
     const [view, setView] = useState<'landing' | 'ide' | 'enterprise'>('landing');
@@ -55,13 +57,21 @@ const App: React.FC = () => {
     const handleExitEnterprise = () => {
         setView('landing');
     };
+    
+    const LoadingFallback = () => (
+      <div className="bg-darker text-light min-h-screen font-inter flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
 
     return (
         <div className="bg-darker text-light min-h-screen font-inter">
-            {view === 'landing' && <LandingPage onGetStarted={handleGetStarted} onGoToEnterprise={handleGoToEnterprise} />}
-            {view === 'ide' && project && <IdeView project={project} onExit={handleExitIde} addToast={addToast} />}
-            {view === 'enterprise' && <EnterpriseDashboard onExit={handleExitEnterprise} />}
-            {isModalOpen && <ProjectModal onClose={handleCloseModal} onCreate={handleCreateProject} />}
+            <Suspense fallback={<LoadingFallback />}>
+                {view === 'landing' && <LandingPage onGetStarted={handleGetStarted} onGoToEnterprise={handleGoToEnterprise} />}
+                {view === 'ide' && project && <IdeView project={project} onExit={handleExitIde} addToast={addToast} />}
+                {view === 'enterprise' && <EnterpriseDashboard onExit={handleExitEnterprise} />}
+                {isModalOpen && <ProjectModal onClose={handleCloseModal} onCreate={handleCreateProject} />}
+            </Suspense>
 
             <div aria-live="assertive" className="fixed inset-0 flex flex-col items-end px-4 py-6 pointer-events-none sm:p-6 z-[200] space-y-2">
                 {toasts.map(toast => (

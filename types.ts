@@ -1,3 +1,5 @@
+import type * as React from 'react';
+
 export type MinecraftPlatform = 'forge' | 'fabric' | 'spigot' | 'paper' | 'bukkit' | 'neoforge';
 export type MinecraftVersion = string; // e.g., '1.20.1', '1.19.2'
 

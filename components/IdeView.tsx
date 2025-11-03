@@ -398,7 +398,7 @@ export const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) =
                 <button onClick={onExit} className="bg-accent/80 hover:bg-accent text-light py-2 px-4 rounded-lg font-semibold transition-colors duration-300">Exit IDE</button>
             </header>
 
-            <div ref={ideContainerRef} className="flex flex-grow overflow-hidden">
+            <div ref={ideContainerRef} className="flex flex-grow overflow-hidden gpu-accelerate">
                 <div style={{ width: `${panelWidths.left}px` }}>
                     <FileExplorer onFileSelect={handleFileSelect} projectStructure={fileTree} />
                 </div>

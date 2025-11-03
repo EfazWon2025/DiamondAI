@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PlayCircleIcon, ServerIcon, HammerIcon } from '../icons/IdeIcons';
 import type { ConsoleLogEntry } from '../../types';
 import { useConsoleStream } from '../../hooks/useConsoleStream';
+import { useVirtualization } from '../../hooks/useVirtualization';
 
 const GradleTask: React.FC<{ icon: React.ElementType, name: string, description: string }> = ({ icon: Icon, name, description }) => (
     <div className="flex items-center gap-3 p-2 rounded-md hover:bg-secondary/10 cursor-pointer">
@@ -23,29 +24,59 @@ const GradlePanel: React.FC = () => (
 );
 
 
-const ConsoleLog: React.FC<ConsoleLogEntry> = ({ level, message, source, timestamp }) => {
+const CONSOLE_ITEM_HEIGHT = 18; // px
+
+// FIX: Changed ConsoleLog to destructure props inside the function body to fix the spread type error.
+const ConsoleLog: React.FC<ConsoleLogEntry & { style?: React.CSSProperties }> = (props) => {
+    const { level, message, source, timestamp, style } = props;
     const color = level === 'INFO' ? 'text-light-text' : level === 'WARN' ? 'text-yellow-400' : level === 'ERROR' ? 'text-accent' : 'text-primary';
     return (
-        <p className={`${color}`}>
-            <span className="text-light-text/50">[{timestamp}]</span>
-            <span className="font-bold"> [{source}/{level}]: </span>
-            {message}
-        </p>
+        <div className={`flex items-center ${color} whitespace-nowrap overflow-hidden`} style={style}>
+            <span className="text-light-text/50 mr-2">[{timestamp}]</span>
+            <span className="font-bold mr-2">[{source}/{level}]:</span>
+            <span className="truncate">{message}</span>
+        </div>
     );
 };
 
 const MinecraftConsole: React.FC<{ logs: ConsoleLogEntry[] }> = ({ logs }) => {
-    const consoleEndRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { visibleItems, paddingTop, totalHeight, range } = useVirtualization(logs, CONSOLE_ITEM_HEIGHT, containerRef);
+    const atBottomRef = useRef(true);
 
     useEffect(() => {
-        consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [logs]);
+        const container = containerRef.current;
+        if (container && atBottomRef.current) {
+            container.scrollTop = totalHeight;
+        }
+    }, [logs.length, totalHeight]);
+    
+    const handleScroll = () => {
+        const container = containerRef.current;
+        if (container) {
+            const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < CONSOLE_ITEM_HEIGHT;
+            atBottomRef.current = isAtBottom;
+        }
+    };
 
     return (
-     <div className="font-mono text-xs p-3 h-full overflow-y-auto">
-        {logs.map((log, i) => <ConsoleLog key={i} {...log} />)}
-        <div ref={consoleEndRef} />
-     </div>
+        <div 
+            ref={containerRef} 
+            className="font-mono text-xs p-3 h-full overflow-y-auto"
+            onScroll={handleScroll}
+        >
+            <div style={{ height: `${totalHeight}px`, position: 'relative' }}>
+                <div style={{ position: 'absolute', top: `${paddingTop}px`, width: '100%' }}>
+                    {visibleItems.map((log, index) => (
+                        <ConsoleLog 
+                            key={range.start + index} 
+                            {...log} 
+                            style={{ height: CONSOLE_ITEM_HEIGHT }} 
+                        />
+                    ))}
+                </div>
+            </div>
+        </div>
     );
 };
 
