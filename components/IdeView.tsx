@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { Project, ToastMessage, FileTreeNode, AIHistoryItem, BuildResult, MinecraftPlatform } from '../types';
-import { generatePluginCode } from '../services/geminiService';
 import { getProjectFiles, getFileContent, writeFileContent, executeBuildCommand, compileProject, downloadBuild } from '../services/api';
 import { PLATFORMS } from '../services/platforms';
 import { DiamondIcon } from './icons/DiamondIcon';
@@ -9,45 +8,9 @@ import { BottomPanel } from './ide/BottomPanel';
 import { StatusBar } from './ide/StatusBar';
 import { AssetPreview } from './ide/AssetPreview';
 import { XCircleIcon, PlayCircleIcon, ServerIcon, HammerIcon, BoltIcon, FileCodeIcon, PuzzleIcon } from './icons/IdeIcons';
-import { AiAssistant } from './ide/AiAssistant';
+import { AICodeAssistant } from './ide/AICodeAssistant';
 import { VisualBuilder } from './VisualBuilder';
-
-const CodeEditor: React.FC<{
-    content: string;
-    breakpoints: number[];
-    onToggleBreakpoint: (line: number) => void;
-    activeLine: number;
-    autocomplete: { show: boolean, x: number, y: number, suggestions: string[] } | null;
-    highlightFn: (text: string) => string;
-}> = ({ content, breakpoints, onToggleBreakpoint, activeLine, autocomplete, highlightFn }) => {
-    return (
-        <div className="relative h-full font-mono text-sm bg-darker overflow-auto">
-            {autocomplete?.show && (
-                <div className="absolute z-30 bg-dark border border-secondary/50 rounded-md shadow-lg" style={{ top: autocomplete.y, left: autocomplete.x }}>
-                    <ul className="py-1">
-                        {autocomplete.suggestions.map(sugg => (
-                            <li key={sugg} className="px-3 py-1 text-xs hover:bg-secondary/20 cursor-pointer">{sugg}</li>
-                        ))}
-                    </ul>
-                </div>
-            )}
-            {content.split('\n').map((line, i) => (
-                <div key={i} className={`flex ${activeLine === i + 1 ? 'bg-secondary/10' : ''}`}>
-                    <div className="w-12 text-right pr-2 text-light-text/30 select-none flex items-center justify-end">
-                        <span className="mr-2">{i + 1}</span>
-                         <div 
-                            className="w-4 h-4 flex items-center justify-center cursor-pointer"
-                            onClick={() => onToggleBreakpoint(i + 1)}
-                        >
-                            {breakpoints.includes(i + 1) && <div className="w-2 h-2 rounded-full bg-accent"></div>}
-                        </div>
-                    </div>
-                    <code className="flex-1 whitespace-pre" dangerouslySetInnerHTML={{ __html: highlightFn(line) || ' ' }} />
-                </div>
-            ))}
-        </div>
-    );
-};
+import { CodeEditor } from './ide/CodeEditor';
 
 const Tab: React.FC<{ name: string; path: string; isActive: boolean; onSelect: (path: string) => void; onClose: ((path: string) => void) | null; icon: React.ReactElement }> = ({ name, path, isActive, onSelect, onClose, icon }) => {
     return (
@@ -78,18 +41,11 @@ export const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) =
     const [fileContents, setFileContents] = useState<Record<string, string>>({});
     const [openFiles, setOpenFiles] = useState<FileTreeNode[]>([]);
     const [activePath, setActivePath] = useState<string>('');
-    const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
-    const [activeLine, setActiveLine] = useState(1);
-    const [breakpoints, setBreakpoints] = useState<number[]>([]);
-    const [autocomplete, setAutocomplete] = useState<{ show: boolean, x: number, y: number, suggestions: string[] } | null>(null);
     
     const [panelWidths, setPanelWidths] = useState({ left: 256, middle: window.innerWidth - 256 - 350, right: 350 });
     const [bottomPanelHeight, setBottomPanelHeight] = useState(250);
 
     const [rightPanelTab, setRightPanelTab] = useState<'ai' | 'assets'>('ai');
-    const [aiPrompt, setAiPrompt] = useState('');
-    const [aiHistory, setAiHistory] = useState<AIHistoryItem[]>([]);
-    const [isGenerating, setIsGenerating] = useState(false);
     const [compilationStatus, setCompilationStatus] = useState<{ isCompiling: boolean; result: BuildResult | null }>({ isCompiling: false, result: null });
 
     const isResizingVertical = useRef<number | null>(null);
@@ -153,31 +109,34 @@ export const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) =
     
     const getCurrentFile = () => openFiles.find(f => f.path === activePath);
 
-    const handleGenerateCode = async () => {
-        if (!aiPrompt.trim()) return addToast("Please enter a prompt.", 'error');
-        if (activePath === 'visual-builder' || !getCurrentFile()) return addToast("Please select a code file to modify.", 'error');
-
-        setIsGenerating(true);
-        addToast("AI is generating code...", 'info');
-        try {
-            const currentFile = getCurrentFile()!;
-            const currentCode = fileContents[currentFile.path] || '';
-            const newCode = await generatePluginCode(project.id, aiPrompt, currentCode, aiHistory);
-            
-            setFileContents(prev => ({ ...prev, [currentFile.path]: newCode }));
-            await writeFileContent(project.id, currentFile.path, newCode);
-            
-            setAiHistory(prev => [...prev, { prompt: aiPrompt, code: newCode }]);
-            setAiPrompt('');
-            addToast("Code generated and saved successfully!", 'success');
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            addToast(errorMessage, 'error');
-        } finally {
-            setIsGenerating(false);
+    const handleAiApplyChanges = (newCode: string) => {
+        const path = activePath;
+        if (path !== 'visual-builder' && path !== '') {
+            // Update the file content state
+            setFileContents(prev => ({ ...prev, [path]: newCode }));
+            // Instantly save AI changes, no throttle
+            writeFileContent(project.id, path, newCode)
+                .then(() => addToast("AI changes applied and saved.", "success"))
+                .catch(() => addToast("Failed to save AI changes.", "error"));
+        } else {
+            addToast("No active file to apply changes to.", "error");
         }
     };
     
+    const handleCodeChange = (newCode: string) => {
+        const path = activePath;
+        if (path !== 'visual-builder') {
+            setFileContents(prev => ({ ...prev, [path]: newCode }));
+            
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+            }
+            saveTimeoutRef.current = window.setTimeout(() => {
+                writeFileContent(project.id, path, newCode);
+            }, 1000);
+        }
+    };
+
     const handleBlockDrop = (codeSnippet: string) => {
         if (!fileTree) return;
         const targetFileNode = findFileInTree(fileTree, '.java');
@@ -288,54 +247,6 @@ export const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) =
             window.removeEventListener('mouseup', handleMouseUp);
         };
     }, [handleMouseMove, handleMouseUp]);
-    
-    const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const text = e.target.value;
-        const path = activePath;
-        
-        if (path !== 'visual-builder') {
-            setFileContents(prev => ({ ...prev, [path]: text }));
-            
-            if (saveTimeoutRef.current) {
-                clearTimeout(saveTimeoutRef.current);
-            }
-            saveTimeoutRef.current = window.setTimeout(() => {
-                writeFileContent(project.id, path, text);
-            }, 1000);
-        }
-
-        const pos = e.target.selectionStart;
-        const line = (text.substring(0, pos).match(/\n/g) || []).length + 1;
-        const column = pos - text.lastIndexOf('\n', pos - 1);
-        setCursorPosition({ line, column });
-        setActiveLine(line);
-    };
-
-    const highlight = useCallback((text: string, platform: MinecraftPlatform) => {
-        let highlighted = text
-            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-            .replace(/\b(package|import|public|class|extends|@Override|void|new|final|private|protected|static|return|implements|enum|interface)\b/g, '<span class="text-purple-400">$&</span>')
-            .replace(/(".*?")/g, '<span class="text-orange-400">$&</span>')
-            .replace(/(\/\/.*)/g, '<span class="text-green-500/70">$&</span>')
-            .replace(/\b(true|false|this|null)\b/g, '<span class="text-red-400">$&</span>')
-            .replace(/\b(\d+\.?\d*)\b/g, '<span class="text-teal-300">$&</span>');
-
-        const platformKeywords: Record<MinecraftPlatform, string[]> = {
-            forge: ['@Mod', '@SubscribeEvent', 'ForgeRegistries', 'FMLCommonSetupEvent', 'Dist', 'SidedProxy'],
-            fabric: ['@Environment', 'FabricLoader', 'FabricItemGroup', 'FabricItemSettings', 'ClientModInitializer', 'DedicatedServerModInitializer'],
-            spigot: ['@EventHandler', 'Bukkit', 'PluginBase', 'CommandExecutor', 'TabCompleter', 'JavaPlugin'],
-            paper: ['@EventHandler', 'Paper', 'Component', 'Adventure', 'JavaPlugin'],
-            bukkit: ['@EventHandler', 'Bukkit', 'PluginBase', 'JavaPlugin'],
-            neoforge: ['@Mod', '@EventBusSubscriber', 'NeoForge', 'NeoForgeRegistries', 'FMLCommonSetupEvent'],
-        };
-
-        const keywords = platformKeywords[platform] || [];
-        keywords.forEach(keyword => {
-            highlighted = highlighted.replace(new RegExp(`\\b${keyword}\\b`, 'g'), '<span class="text-cyan-400">$&</span>');
-        });
-
-        return highlighted;
-    }, []);
 
     const getBuildCommands = () => {
         switch (project.platform) {
@@ -415,25 +326,11 @@ export const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) =
                         </div>
                         <div className="flex-grow overflow-auto relative bg-darker">
                            {activePath !== 'visual-builder' && getCurrentFile() ? (
-                               <>
-                                <textarea
-                                    value={fileContents[activePath] || ''}
-                                    onChange={handleTextareaInput}
-                                    onClick={(e) => handleTextareaInput(e as any)}
-                                    onKeyUp={(e) => handleTextareaInput(e as any)}
-                                    spellCheck="false"
-                                    className="absolute inset-0 z-10 w-full h-full p-0 bg-transparent text-transparent caret-primary resize-none border-none outline-none overflow-auto whitespace-pre leading-relaxed tracking-wide font-mono text-sm"
-                                    style={{ paddingLeft: '3rem' }}
-                                />
                                 <CodeEditor
-                                   content={fileContents[activePath] || ''}
-                                   breakpoints={breakpoints}
-                                   onToggleBreakpoint={(line) => setBreakpoints(p => p.includes(line) ? p.filter(l => l !== line) : [...p, line])}
-                                   activeLine={activeLine}
-                                   autocomplete={autocomplete}
-                                   highlightFn={(text) => highlight(text, project.platform)}
+                                    value={fileContents[activePath] || ''}
+                                    onChange={handleCodeChange}
+                                    language={getCurrentFile()?.fileType === 'java' ? 'java' : 'plaintext'}
                                 />
-                               </>
                            ) : activePath === 'visual-builder' ? (
                                 <VisualBuilder onBlockDrop={handleBlockDrop} />
                            ) : (
@@ -459,13 +356,19 @@ export const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) =
                          <button onClick={() => setRightPanelTab('assets')} className={`py-2 px-4 ${rightPanelTab === 'assets' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>ASSET PREVIEW</button>
                     </div>
                     <div className="flex-grow overflow-auto">
-                        {rightPanelTab === 'ai' && <AiAssistant prompt={aiPrompt} setPrompt={setAiPrompt} history={aiHistory} onSubmit={handleGenerateCode} isLoading={isGenerating}/>}
+                        {rightPanelTab === 'ai' && (
+                            <AICodeAssistant
+                                project={project}
+                                originalCode={fileContents[activePath] || ''}
+                                onApplyChanges={handleAiApplyChanges}
+                            />
+                        )}
                         {rightPanelTab === 'assets' && <AssetPreview activeFile={getCurrentFile()} />}
                     </div>
                 </div>
 
             </div>
-            <StatusBar branch="main" cursorPosition={cursorPosition} />
+            <StatusBar branch="main" />
         </div>
     );
 };

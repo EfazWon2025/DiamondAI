@@ -26,9 +26,7 @@ const GradlePanel: React.FC = () => (
 
 const CONSOLE_ITEM_HEIGHT = 18; // px
 
-// FIX: Changed ConsoleLog to destructure props inside the function body to fix the spread type error.
-const ConsoleLog: React.FC<ConsoleLogEntry & { style?: React.CSSProperties }> = (props) => {
-    const { level, message, source, timestamp, style } = props;
+const ConsoleLog: React.FC<ConsoleLogEntry & { style?: React.CSSProperties }> = ({ level, message, source, timestamp, style }) => {
     const color = level === 'INFO' ? 'text-light-text' : level === 'WARN' ? 'text-yellow-400' : level === 'ERROR' ? 'text-accent' : 'text-primary';
     return (
         <div className={`flex items-center ${color} whitespace-nowrap overflow-hidden`} style={style}>
@@ -41,7 +39,8 @@ const ConsoleLog: React.FC<ConsoleLogEntry & { style?: React.CSSProperties }> = 
 
 const MinecraftConsole: React.FC<{ logs: ConsoleLogEntry[] }> = ({ logs }) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const { visibleItems, paddingTop, totalHeight, range } = useVirtualization(logs, CONSOLE_ITEM_HEIGHT, containerRef);
+    // FIX: Explicitly provide the generic type to `useVirtualization` to ensure `visibleItems` is correctly typed.
+    const { visibleItems, paddingTop, totalHeight, range } = useVirtualization<ConsoleLogEntry>(logs, CONSOLE_ITEM_HEIGHT, containerRef);
     const atBottomRef = useRef(true);
 
     useEffect(() => {
@@ -70,7 +69,10 @@ const MinecraftConsole: React.FC<{ logs: ConsoleLogEntry[] }> = ({ logs }) => {
                     {visibleItems.map((log, index) => (
                         <ConsoleLog 
                             key={range.start + index} 
-                            {...log} 
+                            level={log.level}
+                            message={log.message}
+                            source={log.source}
+                            timestamp={log.timestamp}
                             style={{ height: CONSOLE_ITEM_HEIGHT }} 
                         />
                     ))}

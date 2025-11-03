@@ -83,6 +83,9 @@ export interface ConsoleLogEntry {
 }
 
 export interface AIHistoryItem {
+    id: string;
     prompt: string;
     code: string;
+    timestamp: Date;
+    applied: boolean;
 }

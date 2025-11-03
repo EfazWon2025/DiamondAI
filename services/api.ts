@@ -1,7 +1,6 @@
 import type { 
     Project, 
     FileTreeNode, 
-    AIHistoryItem,
     BuildResult,
     MinecraftPlatform
 } from '../types';
@@ -28,8 +27,9 @@ export async function getProjectFiles(projectId: string): Promise<FileTreeNode> 
      // This mock returns a structure similar to the original hardcoded one.
      // A real backend would construct this from the actual file system.
      await new Promise(resolve => setTimeout(resolve, 500));
+     const safeProjectName = projectId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
      return {
-        name: projectId.toUpperCase(),
+        name: projectId,
         type: 'folder',
         path: '/',
         children: [
@@ -39,8 +39,8 @@ export async function getProjectFiles(projectId: string): Promise<FileTreeNode> 
                         { name: 'java', type: 'folder', path: 'src/main/java', children: [
                              { name: 'com', type: 'folder', path: 'src/main/java/com', children: [
                                 { name: 'example', type: 'folder', path: 'src/main/java/com/example', children: [
-                                     { name: 'examplemod', type: 'folder', path: 'src/main/java/com/example/examplemod', children: [
-                                        { name: 'ExampleMod.java', type: 'file', path: 'src/main/java/com/example/examplemod/ExampleMod.java', fileType: 'java' }
+                                     { name: safeProjectName, type: 'folder', path: `src/main/java/com/example/${safeProjectName}`, children: [
+                                        { name: `${safeProjectName.charAt(0).toUpperCase() + safeProjectName.slice(1)}.java`, type: 'file', path: `src/main/java/com/example/${safeProjectName}/${safeProjectName.charAt(0).toUpperCase() + safeProjectName.slice(1)}.java`, fileType: 'java' }
                                      ]}
                                 ]}
                             ]}
@@ -61,6 +61,7 @@ export async function getFileContent(projectId: string, filePath: string, platfo
     await new Promise(resolve => setTimeout(resolve, 200));
 
     const safeProjectName = projectName.replace(/[^a-zA-Z0-9]/g, '');
+    const mainClassName = safeProjectName.charAt(0).toUpperCase() + safeProjectName.slice(1);
     const packageName = `com.example.${safeProjectName.toLowerCase()}`;
 
     if (filePath.endsWith('.java')) {
@@ -69,17 +70,16 @@ export async function getFileContent(projectId: string, filePath: string, platfo
             case 'neoforge':
                 return `package ${packageName};
 
+import com.mojang.logging.LogUtils;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
-import com.mojang.logging.LogUtils;
 
 @Mod("${safeProjectName.toLowerCase()}")
-public class ${safeProjectName} {
+public class ${mainClassName} {
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    public ${safeProjectName}() {
-        // Forge/NeoForge mod initialization logic here.
-        LOGGER.info("Hello from ${safeProjectName}!");
+    public ${mainClassName}() {
+        LOGGER.info("Hello from ${mainClassName}!");
     }
 }`;
             case 'fabric':
@@ -89,13 +89,12 @@ import net.fabricmc.api.ModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ${safeProjectName} implements ModInitializer {
+public class ${mainClassName} implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("${safeProjectName.toLowerCase()}");
 
 	@Override
 	public void onInitialize() {
-		// Fabric mod initialization logic here.
-        LOGGER.info("Hello from ${safeProjectName}!");
+        LOGGER.info("Hello from ${mainClassName}!");
 	}
 }`;
             case 'spigot':
@@ -105,11 +104,10 @@ public class ${safeProjectName} implements ModInitializer {
 
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class ${safeProjectName} extends JavaPlugin {
+public final class ${mainClassName} extends JavaPlugin {
     @Override
     public void onEnable() {
-        // Plugin startup logic
-        getLogger().info("Enabled ${safeProjectName}!");
+        getLogger().info("Enabled ${mainClassName}!");
     }
 
     @Override
@@ -172,25 +170,4 @@ export async function downloadBuild(projectId: string, buildId: string, fileName
     // Clean up the temporary link and element
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
-}
-
-
-// --- AI ---
-export async function generateCode(projectId: string, prompt: string, currentCode: string, history: AIHistoryItem[]): Promise<string> {
-    console.log(`Generating code for project ${projectId} via API with prompt: ${prompt}`);
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    return `${currentCode}
-
-// AI Generated code for: "${prompt}"
-// This code was generated on the server with platform-specific context.
-public void yourNewFeature() {
-    System.out.println("Executing the new feature for project ${projectId}!");
-}
-`;
-}
-
-export async function analyzeCode(projectId: string, code: string): Promise<string> {
-    console.log(`Analyzing code for project ${projectId} via backend API...`);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return `### Code Analysis Report (from Backend)\n\n*   **Platform Compatibility:** Code appears compatible with project platform.\n*   **Performance:** No major bottlenecks detected in this snippet.\n*   **Best Practices:** Code follows standard conventions for this platform.`;
 }
