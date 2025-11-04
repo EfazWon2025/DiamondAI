@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Block, WorkspaceBlock } from '../types';
-import { Icon } from './Icon';
+import { Icon } from './Icon.tsx';
 
 const TOOLBOX_BLOCKS: Block[] = [
     { 

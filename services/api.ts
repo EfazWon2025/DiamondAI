@@ -4,7 +4,7 @@ import type {
     BuildResult,
     MinecraftPlatform
 } from '../types';
-import { PLATFORMS } from './platforms';
+import { PLATFORMS } from './platforms.ts';
 
 interface ProjectFileSystem {
     files: FileTreeNode;

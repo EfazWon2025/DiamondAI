@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { FileTreeNode, Project } from '../../types';
-import { createFile, createFolder } from '../../services/api';
-import { Icon, IconName } from '../Icon';
+import { createFile, createFolder } from '../../services/api.ts';
+import { Icon, IconName } from '../Icon.tsx';
 
 const getFileIcon = (fileType?: FileTreeNode['fileType']): { name: IconName; color: string } => {
     switch (fileType) {

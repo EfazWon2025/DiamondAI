@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { FileTreeNode } from '../../types';
-import { Icon } from '../Icon';
+import { Icon } from '../Icon.tsx';
 
 interface CommandPaletteProps {
     fileTree: FileTreeNode | null;

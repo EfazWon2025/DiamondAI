@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { ToastMessage } from '../types';
-import { Icon } from './Icon';
+import { Icon } from './Icon.tsx';
 
 interface ToastProps {
     toast: ToastMessage;

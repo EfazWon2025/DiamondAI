@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Project, FileTreeNode, AIFileModification } from '../types';
-import { getProjectFiles, getFileContent, writeFileContent, renameFileOrFolder, deleteFileOrFolder, createFile } from '../services/api';
+import { getProjectFiles, getFileContent, writeFileContent, renameFileOrFolder, deleteFileOrFolder, createFile } from '../services/api.ts';
 
 const useOptimisticTreeUpdate = (initialTree: FileTreeNode | null, addToast: (message: string, type?: 'success' | 'info' | 'error') => void) => {
     const [tree, setTree] = useState<FileTreeNode | null>(initialTree);

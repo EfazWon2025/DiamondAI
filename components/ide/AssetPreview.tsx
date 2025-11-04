@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { FileTreeNode } from '../../types';
-import { Icon } from '../Icon';
+import { Icon } from '../Icon.tsx';
 
 const ModelPreview: React.FC = () => (
     <div className="w-full h-64 flex items-center justify-center bg-darker rounded-lg overflow-hidden">

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Project, BuildResult, MinecraftPlatform } from '../types';
-import { compileProject, downloadBuild } from '../services/api';
-import { logger } from '../services/logger';
+import { compileProject, downloadBuild } from '../services/api.ts';
+import { logger } from '../services/logger.ts';
 
 export const useCompilation = (project: Project, addToast: (message: string, type?: 'success' | 'info' | 'error') => void) => {
     const [compilationStatus, setCompilationStatus] = useState<{ isCompiling: boolean; result: BuildResult | null }>({ isCompiling: false, result: null });

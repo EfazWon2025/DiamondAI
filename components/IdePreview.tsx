@@ -1,5 +1,5 @@
 import React from 'react';
-import { Icon } from './Icon';
+import { Icon } from './Icon.tsx';
 
 const CodeLine: React.FC<{ number: number; children?: React.ReactNode }> = ({ number, children }) => (
     <div className="flex text-sm">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Icon, IconName } from '../Icon';
+import { Icon, IconName } from '../Icon.tsx';
 
 interface StatusBarProps {
     branch: string;

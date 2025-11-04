@@ -1,6 +1,6 @@
 import React from 'react';
 import { PlatformConfig, MinecraftPlatform, MinecraftVersion } from '../types';
-import { Icon } from '../components/Icon';
+import { Icon } from '../components/Icon.tsx';
 
 export const PLATFORMS: Record<MinecraftPlatform, PlatformConfig> = {
   forge: {

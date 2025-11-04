@@ -25,12 +25,13 @@ interface SpeechRecognition extends EventTarget {
   onerror: (event: SpeechRecognitionErrorEvent) => void;
 }
 
-import React, { useState, useEffect, useRef } from 'react';
-import { generateProjectChanges } from '../../services/geminiService';
-import { processFile } from '../../services/fileProcessor';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import ReactMarkdown from 'https://esm.sh/react-markdown@9';
+import { generatePlanStream, generateProjectChanges } from '../../services/geminiService.ts';
+import { processFile } from '../../services/fileProcessor.ts';
 import type { Project, ToastMessage, AIFileModification } from '../../types';
-import { Icon } from '../Icon';
-import { CodeEditor } from './CodeEditor';
+import { Icon } from '../Icon.tsx';
+import { CodeEditor } from './CodeEditor.tsx';
 
 const CodeSkeletonLoader: React.FC = () => (
   <div className="p-4 space-y-3">
@@ -40,19 +41,35 @@ const CodeSkeletonLoader: React.FC = () => (
   </div>
 );
 
+const ThinkingIndicator: React.FC<{ title: string }> = ({ title }) => (
+    <div className="p-4 flex flex-col items-center justify-center text-light-text">
+        <div className="flex items-center gap-2">
+            <Icon name="sparkles" className="w-5 h-5 text-primary animate-pulse" />
+            <span className="font-semibold">{title}</span>
+        </div>
+        <div className="mt-3 w-full bg-dark rounded-full h-1.5 overflow-hidden">
+            <div className="bg-primary h-1.5 rounded-full animate-backgroundPan" style={{ backgroundSize: '200% 100%', backgroundImage: 'linear-gradient(to right, #00FF88 0%, #7B68EE 50%, #00FF88 100%)'}}></div>
+        </div>
+        <p className="text-xs mt-2">This may take a few moments.</p>
+    </div>
+);
+
+
 interface ChatTurn {
     id: string;
     prompt: string;
-    modifications: AIFileModification[];
-    status: 'pending' | 'completed' | 'applied' | 'error' | 'discarded';
+    plan?: string;
+    modifications?: AIFileModification[];
+    status: 'plan_pending' | 'plan_completed' | 'code_pending' | 'code_completed' | 'applied' | 'error' | 'discarded';
     errorMessage?: string;
     fileContextName?: string;
+    fileContextContent?: string | null;
 }
 
 const UserMessage: React.FC<{ turn: ChatTurn }> = ({ turn }) => (
     <div className="flex justify-end mb-4">
         <div className="bg-secondary/80 text-light p-3 rounded-lg max-w-lg shadow-md">
-            <p>{turn.prompt}</p>
+            <p className="whitespace-pre-wrap">{turn.prompt}</p>
             {turn.fileContextName && (
                 <div className="mt-2 text-xs bg-secondary/50 p-1.5 rounded-md flex items-center gap-2">
                     <Icon name="fileText" className="w-4 h-4" />
@@ -63,23 +80,87 @@ const UserMessage: React.FC<{ turn: ChatTurn }> = ({ turn }) => (
     </div>
 );
 
-const AiMessage: React.FC<{ turn: ChatTurn; onApply: () => void; onDiscard: () => void; }> = ({ turn, onApply, onDiscard }) => {
-    const codeToDisplay = turn.modifications
-        .map(mod => `// Path: ${mod.path}\n\n${mod.content}`)
-        .join('\n\n// ----------------------------------------\n\n');
+const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply: () => void; onDiscard: () => void; }> = ({ turn, onGenerateCode, onApply, onDiscard }) => {
+    const [isThinkingExpanded, setIsThinkingExpanded] = useState(true);
+    const { plan, status } = turn;
 
-    return (
-        <div className="flex justify-start mb-4">
-            <div className="bg-darker p-1 rounded-lg w-full shadow-md border border-secondary/10">
-                {turn.status === 'pending' && <CodeSkeletonLoader />}
-                {turn.status === 'error' && <div className="p-3 text-accent">{turn.errorMessage}</div>}
-                {(turn.status === 'completed' || turn.status === 'applied' || turn.status === 'discarded') && (
+    const [thinkingText, formalPlanText] = useMemo(() => {
+        if (!plan) return ['', ''];
+        
+        const planParts = plan.split(/^(?=##\s*Plan)/m);
+        let thinking = planParts[0] || '';
+        let formal = planParts.length > 1 ? planParts.slice(1).join('') : '';
+
+        thinking = thinking.replace(/^##\s*Thinking\s*$/m, '').trim();
+
+        // If the stream is done and there's no explicit 'Plan' section, assume the whole text is the plan.
+        if (!formal && thinking && status === 'plan_completed') {
+            formal = thinking;
+            thinking = '';
+        }
+        
+        return [thinking, formal];
+    }, [plan, status]);
+
+    const renderContent = () => {
+        switch (status) {
+            case 'plan_pending':
+            case 'plan_completed':
+                if (status === 'plan_pending' && !plan) {
+                    return <ThinkingIndicator title="AI is generating a plan..." />;
+                }
+                return (
+                    <div className="flex flex-col min-h-0">
+                         <div className="max-h-96 overflow-y-auto p-3 prose prose-sm prose-invert max-w-none rounded-t-md">
+                            {thinkingText && (
+                                <div className="mb-4 bg-dark p-3 rounded-md border border-secondary/10">
+                                    <button 
+                                        onClick={() => setIsThinkingExpanded(prev => !prev)} 
+                                        className="w-full flex items-center justify-between text-left font-semibold text-light-text hover:text-light"
+                                        aria-expanded={isThinkingExpanded}
+                                        aria-controls="thinking-content"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Icon name="sparkles" className="w-4 h-4 text-primary"/>
+                                            AI Thinking Process
+                                        </span>
+                                        <Icon name={isThinkingExpanded ? "chevronDown" : "chevronRight"} className="w-5 h-5 transition-transform" />
+                                    </button>
+                                    {isThinkingExpanded && (
+                                        <div id="thinking-content" className="mt-3 pt-3 border-t border-secondary/20">
+                                            <ReactMarkdown>{thinkingText}</ReactMarkdown>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <ReactMarkdown>{formalPlanText || ''}</ReactMarkdown>
+                            {status === 'plan_pending' && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1"></span>}
+                        </div>
+                        {status === 'plan_completed' && (
+                            <div className="p-2 flex justify-end items-center gap-2 border-t border-secondary/10">
+                                <button onClick={onDiscard} className="px-3 py-1 bg-dark text-light-text rounded hover:bg-dark/50 border border-secondary/20 font-semibold text-xs">Discard</button>
+                                <button onClick={onGenerateCode} className="px-3 py-1 bg-secondary text-light rounded hover:bg-secondary/80 font-bold text-xs flex items-center gap-1"><Icon name="fileCode" className="w-3 h-3" />Generate Code</button>
+                            </div>
+                        )}
+                    </div>
+                );
+            case 'code_pending':
+                return <ThinkingIndicator title="AI is writing code..." />;
+            case 'error':
+                 return <div className="p-3 text-accent whitespace-pre-wrap">{turn.errorMessage}</div>;
+            case 'code_completed':
+            case 'applied':
+            case 'discarded':
+                const codeToDisplay = turn.modifications
+                    ?.map(mod => `// Path: ${mod.path}\n\n${mod.content}`)
+                    .join('\n\n// ----------------------------------------\n\n') || '';
+                return (
                     <div className="flex flex-col min-h-0">
                         <div className="max-h-96 overflow-y-auto rounded-t-md">
                             <CodeEditor value={codeToDisplay} onChange={() => {}} readOnly />
                         </div>
                         <div className="p-2 flex justify-end items-center gap-2 border-t border-secondary/10">
-                            {turn.status === 'completed' && (
+                            {turn.status === 'code_completed' && (
                                 <>
                                     <button onClick={onDiscard} className="px-3 py-1 bg-dark text-light-text rounded hover:bg-dark/50 border border-secondary/20 font-semibold text-xs">Discard</button>
                                     <button onClick={onApply} className="px-3 py-1 bg-primary text-darker rounded hover:bg-primary/80 font-bold text-xs">Apply Changes</button>
@@ -93,7 +174,16 @@ const AiMessage: React.FC<{ turn: ChatTurn; onApply: () => void; onDiscard: () =
                             )}
                         </div>
                     </div>
-                )}
+                );
+            default:
+                return null;
+        }
+    };
+
+    return (
+        <div className="flex justify-start mb-4">
+            <div className="bg-darker p-1 rounded-lg w-full shadow-md border border-secondary/10">
+                {renderContent()}
             </div>
         </div>
     );
@@ -182,35 +272,76 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
   
   const handleAttachClick = () => fileInputRef.current?.click();
 
-  const handleGenerateCode = async () => {
+  const handleGeneratePlan = async () => {
     if (!prompt.trim() || !project || !hasLoadedProject) return;
-    
+
     setIsGenerating(true);
     const newTurn: ChatTurn = {
         id: Date.now().toString(),
         prompt,
-        modifications: [],
-        status: 'pending',
+        plan: '', // Start with an empty plan for streaming
+        status: 'plan_pending',
         fileContextName: uploadedFile?.name,
+        fileContextContent: fileContent,
     };
     setChatLog(prev => [newTurn, ...prev]);
     setPrompt('');
     handleRemoveFile();
 
     try {
-      const modifications = await generateProjectChanges(project, newTurn.prompt, fileContents, fileContent);
-      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, modifications, status: 'completed' } : t));
+        const stream = generatePlanStream(project, newTurn.prompt, fileContents, newTurn.fileContextContent);
+        for await (const chunk of stream) {
+            setChatLog(prev => prev.map(t => 
+                t.id === newTurn.id 
+                ? { ...t, plan: (t.plan || '') + chunk } 
+                : t
+            ));
+        }
+        // After the stream is done, update the status to completed
+        setChatLog(prev => prev.map(t => 
+            t.id === newTurn.id 
+            ? { ...t, status: 'plan_completed' } 
+            : t
+        ));
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, errorMessage, status: 'error' } : t));
+    } finally {
+        setIsGenerating(false);
+    }
+  };
+  
+  const handleGenerateCode = async (turnId: string) => {
+    const turn = chatLog.find(t => t.id === turnId);
+    if (!turn || !turn.plan || !project) return;
+    
+    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'code_pending' } : t));
+    
+    try {
+      const modifications = await generateProjectChanges(project, turn.prompt, fileContents, turn.plan, turn.fileContextContent);
+      setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, modifications, status: 'code_completed' } : t));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, errorMessage, status: 'error' } : t));
-    } finally {
-      setIsGenerating(false);
+      
+      if (errorMessage.includes('Platform Security Violation')) {
+          const banDuration = 5 * 60 * 60 * 1000; // 5 hours
+          const expirationTime = Date.now() + banDuration;
+          localStorage.setItem('banExpiresAt', expirationTime.toString());
+          addToast(errorMessage, 'error');
+          
+          setTimeout(() => {
+              window.location.reload();
+          }, 2000);
+      } else {
+          setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, errorMessage, status: 'error' } : t));
+      }
     }
   };
 
+
   const handleApplyChanges = (turnId: string) => {
     const turn = chatLog.find(t => t.id === turnId);
-    if (!turn || turn.modifications.length === 0) return;
+    if (!turn || !turn.modifications || turn.modifications.length === 0) return;
     onApplyChanges(turn.modifications);
     setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'applied' } : t));
   };
@@ -232,10 +363,10 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
 
       <div className="flex-grow p-4 overflow-y-auto flex flex-col-reverse">
         <div ref={chatEndRef} />
-        {isGenerating && chatLog[0]?.status === 'pending' && <AiMessage turn={chatLog[0]} onApply={() => {}} onDiscard={() => {}} />}
+        {isGenerating && chatLog[0]?.status === 'plan_pending' && <AiMessage turn={chatLog[0]} onGenerateCode={()=>{}} onApply={() => {}} onDiscard={() => {}} />}
         {chatLog.slice(isGenerating ? 1 : 0).map(turn => (
             <React.Fragment key={turn.id}>
-                <AiMessage turn={turn} onApply={() => handleApplyChanges(turn.id)} onDiscard={() => handleDiscard(turn.id)} />
+                <AiMessage turn={turn} onGenerateCode={() => handleGenerateCode(turn.id)} onApply={() => handleApplyChanges(turn.id)} onDiscard={() => handleDiscard(turn.id)} />
                 <UserMessage turn={turn} />
             </React.Fragment>
         ))}
@@ -264,7 +395,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
               placeholder={hasLoadedProject ? "e.g., 'add a /heal command'" : "Waiting for project to load..."}
               className="w-full bg-darker border border-secondary/20 rounded-lg p-3 pr-20 resize-none focus:outline-none focus:ring-2 focus:ring-secondary disabled:opacity-50"
               rows={2} disabled={isGenerating || !hasLoadedProject}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && canGenerate) { e.preventDefault(); handleGenerateCode(); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && canGenerate) { e.preventDefault(); handleGeneratePlan(); } }}
             />
             <div className="absolute right-2 top-2 flex items-center gap-1">
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.docx,.txt" className="hidden" />
@@ -280,8 +411,8 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
                 </button>
             </div>
         </div>
-        <button onClick={handleGenerateCode} disabled={!canGenerate} className="w-full mt-2 bg-primary text-darker font-bold py-2.5 px-4 rounded-lg transition-all duration-300 hover:bg-primary/80 disabled:bg-gray-600 disabled:text-light-text/50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-            <Icon name="sparkles" className="w-4 h-4" />Generate Code
+        <button onClick={handleGeneratePlan} disabled={!canGenerate} className="w-full mt-2 bg-primary text-darker font-bold py-2.5 px-4 rounded-lg transition-all duration-300 hover:bg-primary/80 disabled:bg-gray-600 disabled:text-light-text/50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            <Icon name="sparkles" className="w-4 h-4" />Create Plan
         </button>
       </div>
     </div>

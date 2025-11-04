@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import type { Project, ToastMessage, FileTreeNode, AIFileModification } from '../types';
-import { PLATFORMS } from '../services/platforms';
-import { Icon, IconName } from './Icon';
-import { FileExplorer } from './ide/FileExplorer';
-import { BottomPanel } from './ide/BottomPanel';
-import { StatusBar } from './ide/StatusBar';
-import { AssetPreview } from './ide/AssetPreview';
-import { AICodeAssistant } from './ide/AICodeAssistant';
-import { VisualBuilder } from './VisualBuilder';
-import { CodeEditor } from './ide/CodeEditor';
-import { CommandPalette } from './ide/CommandPalette';
-import { useFileManagement } from '../hooks/useFileManagement';
-import { usePanelResizing } from '../hooks/usePanelResizing';
-import { useCompilation } from '../hooks/useCompilation';
-import { executeBuildCommand } from '../services/api';
-import { SettingsPanel } from './ide/SettingsPanel';
+import { PLATFORMS } from '../services/platforms.ts';
+import { Icon, IconName } from './Icon.tsx';
+import { FileExplorer } from './ide/FileExplorer.tsx';
+import { BottomPanel } from './ide/BottomPanel.tsx';
+import { StatusBar } from './ide/StatusBar.tsx';
+import { AssetPreview } from './ide/AssetPreview.tsx';
+import { AICodeAssistant } from './ide/AICodeAssistant.tsx';
+import { VisualBuilder } from './VisualBuilder.tsx';
+import { CodeEditor } from './ide/CodeEditor.tsx';
+import { CommandPalette } from './ide/CommandPalette.tsx';
+import { useFileManagement } from '../hooks/useFileManagement.ts';
+import { usePanelResizing } from '../hooks/usePanelResizing.ts';
+import { useCompilation } from '../hooks/useCompilation.ts';
+import { executeBuildCommand } from '../services/api.ts';
+import { SettingsPanel } from './ide/SettingsPanel.tsx';
 
 const getFileIconName = (fileType?: FileTreeNode['fileType']): IconName => {
     switch (fileType) {

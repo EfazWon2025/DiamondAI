@@ -1,9 +1,10 @@
 import React from 'react';
-import { Header } from './Header';
-import { Hero } from './Hero';
-import { Features } from './Features';
-import { IdePreview } from './IdePreview';
-import { Footer } from './Footer';
+import { Header } from './Header.tsx';
+import { Hero } from './Hero.tsx';
+import { Features } from './Features.tsx';
+import WhyDiamondAI from './WhyDiamondAI.tsx';
+import { IdePreview } from './IdePreview.tsx';
+import { Footer } from './Footer.tsx';
 
 interface LandingPageProps {
     onGetStarted: () => void;
@@ -15,6 +16,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
             <Header />
             <Hero onGetStarted={onGetStarted} />
             <Features />
+            <WhyDiamondAI />
             <IdePreview />
             <Footer />
         </main>

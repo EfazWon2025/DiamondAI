@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Icon, IconName } from '../Icon';
+import { Icon, IconName } from '../Icon.tsx';
 import type { ConsoleLogEntry, LogEntry } from '../../types';
-import { useConsoleStream } from '../../hooks/useConsoleStream';
-import { useVirtualization } from '../../hooks/useVirtualization';
-import { logger } from '../../services/logger';
+import { useConsoleStream } from '../../hooks/useConsoleStream.ts';
+import { useVirtualization } from '../../hooks/useVirtualization.ts';
+import { logger } from '../../services/logger.ts';
 
 const GradleTask: React.FC<{ icon: IconName, name: string, description: string }> = ({ icon, name, description }) => (
     <div className="flex items-center gap-3 p-2 rounded-md hover:bg-secondary/10 cursor-pointer">

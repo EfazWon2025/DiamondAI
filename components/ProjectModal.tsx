@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Project, MinecraftPlatform, MinecraftVersion } from '../types';
-import { PLATFORMS, getPlatformVersions } from '../services/platforms';
+import { PLATFORMS, getPlatformVersions } from '../services/platforms.ts';
 
 const QualityMeter: React.FC<{ level: 'basic' | 'good' | 'excellent' }> = ({ level }) => {
     const levels = {
