@@ -1,6 +1,6 @@
 {
   "name": "Diamond AI",
-  "description": "An AI-powered online IDE to create Minecraft plugins/mods and Discord bots. Describe your desired functionality, and our AI assistant will generate the code for you within a feature-rich, cloud-based development environment.",
+  "description": "An AI-powered online IDE to create Minecraft plugins/mods and Discord bots. Describe your desired functionality, and our Diamond AI assistant will generate the code for you within a feature-rich, cloud-based development environment.",
   "requestFramePermissions": [
     "microphone"
   ]

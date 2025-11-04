@@ -13,6 +13,23 @@
       html {
         scroll-behavior: smooth;
       }
+      /* Theme color variables */
+      :root, html[data-theme="diamond"] {
+        --color-primary: #00FF88;
+        --color-secondary: #7B68EE;
+      }
+      html[data-theme="ruby"] {
+        --color-primary: #FF4757;
+        --color-secondary: #e84118;
+      }
+      html[data-theme="sapphire"] {
+        --color-primary: #3742fa;
+        --color-secondary: #5352ed;
+      }
+      html[data-theme="emerald"] {
+        --color-primary: #2ecc71;
+        --color-secondary: #27ae60;
+      }
       body {
         font-family: 'Inter', sans-serif;
         background-color: #0F0F1B;
@@ -47,6 +64,11 @@
       /* Remove bottom margin from the last element inside a list item */
       .ai-plan-display li > :last-child {
         margin-bottom: 0;
+      }
+      
+      /* Color Theme transition */
+      *, *::before, *::after {
+        transition: color .2s ease-in-out, background-color .2s ease-in-out, border-color .2s ease-in-out, fill .2s ease-in-out, stroke .2s ease-in-out;
       }
 
       /* Custom Scrollbar for Webkit browsers */
@@ -111,8 +133,8 @@
                 },
             }),
             colors: {
-              primary: '#00FF88',   // Minecraft Green
-              secondary: '#7B68EE',  // Royal Purple
+              primary: 'var(--color-primary)',   // Minecraft Green
+              secondary: 'var(--color-secondary)',  // Royal Purple
               dark: '#1A1A2E',      // Space Cadet
               darker: '#0F0F1B',    // Deep Space
               light: '#F8F9FA',     // Pure White

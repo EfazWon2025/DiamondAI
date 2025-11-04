@@ -159,7 +159,7 @@ const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) => {
                 
                 <div style={{ width: `${panelWidths.right}px` }} className="flex flex-col">
                     <div className="shrink-0 bg-dark border-b border-secondary/10 flex text-xs font-semibold">
-                        <button onClick={() => setRightPanelTab('ai')} className={`py-2 px-4 ${rightPanelTab === 'ai' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>AI ASSISTANT</button>
+                        <button onClick={() => setRightPanelTab('ai')} className={`py-2 px-4 ${rightPanelTab === 'ai' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>DIAMOND AI</button>
                         <button onClick={() => setRightPanelTab('assets')} className={`py-2 px-4 ${rightPanelTab === 'assets' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>ASSET PREVIEW</button>
                         <button onClick={() => setRightPanelTab('settings')} className={`py-2 px-4 ${rightPanelTab === 'settings' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>SETTINGS</button>
                     </div>

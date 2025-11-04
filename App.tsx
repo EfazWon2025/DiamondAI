@@ -1,7 +1,10 @@
-import React, { useState, lazy, Suspense, useEffect } from 'react';
-import type { Project, ToastMessage } from './types';
+import React, { useState, lazy, Suspense, useEffect, useRef } from 'react';
+import type { Project, ToastMessage, LandingChatMessage } from './types';
 import { Toast } from './components/Toast';
 import { createProject as apiCreateProject } from './services/api';
+import { GoogleGenAI } from "@google/genai";
+import type { Chat } from "@google/genai";
+
 
 const LandingPage = lazy(() => import('./components/LandingPage.tsx'));
 const ProjectModal = lazy(() => import('./components/ProjectModal.tsx'));
@@ -15,6 +18,103 @@ const App: React.FC = () => {
     const [project, setProject] = useState<Project | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [banExpiresAt, setBanExpiresAt] = useState<number | null>(null);
+    
+    const themes = ['diamond', 'ruby', 'sapphire', 'emerald'];
+    const [currentTheme, setCurrentTheme] = useState(themes[0]);
+
+    // State for Landing Page AI Chat
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [chatMessages, setChatMessages] = useState<LandingChatMessage[]>([]);
+    const [isChatResponding, setIsChatResponding] = useState(false);
+    const chatSessionRef = useRef<Chat | null>(null);
+
+    const LANDING_PAGE_CHAT_INSTRUCTIONS = `You are a 24/7 support assistant for Diamond AI, an AI-powered IDE. Your primary role is to help existing and potential users by answering their questions about the platform, troubleshooting common issues, and providing guidance on using the IDE's features. Be patient, clear, and professional. Your goal is to provide excellent customer support. Do not generate code.`;
+
+    useEffect(() => {
+        // Initialize chat with a welcome message
+        if (isChatOpen && chatMessages.length === 0) {
+            setChatMessages([
+                {
+                    id: 'init',
+                    role: 'model',
+                    text: "Welcome to Diamond AI Support! How can I help you today? Whether you have a question about our features or need help getting started, I'm here for you 24/7. 💬",
+                }
+            ]);
+        }
+    }, [isChatOpen]);
+
+
+    const handleToggleChat = () => setIsChatOpen(prev => !prev);
+
+    const handleSendChatMessage = async (prompt: string) => {
+        if (!prompt.trim()) return;
+
+        const userMessage: LandingChatMessage = {
+            id: Date.now().toString(),
+            role: 'user',
+            text: prompt,
+        };
+        setChatMessages(prev => [...prev, userMessage]);
+        setIsChatResponding(true);
+
+        const modelResponseId = (Date.now() + 1).toString();
+        const modelMessage: LandingChatMessage = {
+            id: modelResponseId,
+            role: 'model',
+            text: '',
+            isStreaming: true
+        };
+        setChatMessages(prev => [...prev, modelMessage]);
+
+        try {
+            if (!chatSessionRef.current) {
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                chatSessionRef.current = ai.chats.create({
+                    model: 'gemini-2.5-flash',
+                    config: { systemInstruction: LANDING_PAGE_CHAT_INSTRUCTIONS },
+                });
+            }
+            
+            const stream = await chatSessionRef.current.sendMessageStream({ message: prompt });
+
+            let fullResponse = '';
+            for await (const chunk of stream) {
+                fullResponse += chunk.text;
+                setChatMessages(prev => prev.map(msg => 
+                    msg.id === modelResponseId ? { ...msg, text: fullResponse } : msg
+                ));
+            }
+
+        } catch (error) {
+            console.error("Chat error:", error);
+            const errorMessage = "Sorry, I encountered an error. Please try again.";
+            setChatMessages(prev => prev.map(msg => 
+                msg.id === modelResponseId ? { ...msg, text: errorMessage } : msg
+            ));
+        } finally {
+            setIsChatResponding(false);
+            setChatMessages(prev => prev.map(msg => 
+                msg.id === modelResponseId ? { ...msg, isStreaming: false } : msg
+            ));
+        }
+    };
+
+
+    useEffect(() => {
+        const savedTheme = localStorage.getItem('diamond-ai-theme') || themes[0];
+        if (themes.includes(savedTheme)) {
+            setCurrentTheme(savedTheme);
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+    }, []);
+
+    const handleThemeChange = () => {
+        const currentIndex = themes.indexOf(currentTheme);
+        const nextTheme = themes[(currentIndex + 1) % themes.length];
+        setCurrentTheme(nextTheme);
+        localStorage.setItem('diamond-ai-theme', nextTheme);
+        document.documentElement.setAttribute('data-theme', nextTheme);
+    };
 
     useEffect(() => {
         const isDevelopment = window.location.hostname === 'localhost' ||
@@ -91,7 +191,17 @@ const App: React.FC = () => {
                     <BanScreen banExpiresAt={banExpiresAt} />
                 ) : (
                     <>
-                        {view === 'landing' && <LandingPage onGetStarted={handleGetStarted} />}
+                        {view === 'landing' && (
+                             <LandingPage 
+                                onGetStarted={handleGetStarted} 
+                                onThemeChange={handleThemeChange} 
+                                isChatOpen={isChatOpen}
+                                chatMessages={chatMessages}
+                                isChatResponding={isChatResponding}
+                                onToggleChat={handleToggleChat}
+                                onSendChatMessage={handleSendChatMessage}
+                             />
+                        )}
                         {view === 'ide' && project && <IdeView project={project} onExit={handleExitIde} addToast={addToast} />}
                         {isModalOpen && <ProjectModal onClose={handleCloseModal} onCreate={handleCreateProject} />}
                     </>

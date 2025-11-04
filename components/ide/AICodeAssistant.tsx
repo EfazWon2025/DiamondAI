@@ -124,7 +124,7 @@ const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply:
                                         <Icon name={isThinkingExpanded ? "chevronDown" : "chevronRight"} className="w-5 h-5 transition-transform" />
                                     </button>
                                     {isThinkingExpanded && (
-                                        <div id="thinking-content" className="mt-3 pt-3 border-t border-secondary/20">
+                                        <div id="thinking-content" className="mt-3 pt-3 border-t border-secondary/20 opacity-80">
                                             <ReactMarkdown>{thinkingText}</ReactMarkdown>
                                         </div>
                                     )}
@@ -416,7 +416,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
       <div className="p-3 border-b border-secondary/10 shrink-0">
           <h2 className="text-xs font-bold uppercase tracking-wider text-light-text flex items-center gap-2">
             <Icon name="sparkles" className="w-4 h-4 text-primary" />
-            AI Assistant
+            Diamond AI Assistant
           </h2>
       </div>
 
@@ -431,7 +431,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
         {chatLog.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center text-light-text p-4 m-auto">
                 <Icon name="sparkles" className="w-16 h-16 text-secondary/10" />
-                <h3 className="mt-4 font-bold text-light">AI Assistant Ready</h3>
+                <h3 className="mt-4 font-bold text-light">Diamond AI Assistant Ready</h3>
                 <p className="mt-1 max-w-xs">{hasLoadedProject ? "Describe the changes you want to make or ask a question." : "Loading project files..."}</p>
             </div>
         )}

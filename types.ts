@@ -120,3 +120,10 @@ export interface ChatTurn {
     preModificationContent?: Record<string, string>;
     streamedCode?: string;
 }
+
+export interface LandingChatMessage {
+    id: string;
+    role: 'user' | 'model';
+    text: string;
+    isStreaming?: boolean;
+}

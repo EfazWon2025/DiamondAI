@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Icon } from './Icon.tsx';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+    onThemeChange: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onThemeChange }) => {
     const [scrolled, setScrolled] = useState(false);
 
     useEffect(() => {
@@ -37,6 +41,14 @@ export const Header: React.FC = () => {
                 </ul>
             </nav>
             <div className="flex items-center gap-4">
+                 <button
+                    onClick={onThemeChange}
+                    className="hidden md:block bg-dark/50 text-light border-none p-2.5 rounded-full font-semibold cursor-pointer transition-all duration-300 hover:bg-secondary/20 hover:-translate-y-1"
+                    aria-label="Change theme"
+                    title="Change Theme"
+                >
+                    <Icon name="palette" className="w-5 h-5" />
+                </button>
                 <button className="hidden md:block bg-secondary text-light border-none py-2.5 px-6 rounded-full font-semibold cursor-pointer transition-all duration-300 hover:bg-secondary/80 hover:-translate-y-1 hover:shadow-lg hover:shadow-secondary/30">
                     Sign In
                 </button>
