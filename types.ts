@@ -27,10 +27,12 @@ export interface BuildResult {
   success: boolean;
   buildId: string;
   message: string;
-  downloadUrl?: string;
   fileName?: string;
   fileSize?: number;
   compatibleServers: string[];
+  details?: {
+    downloadUrl?: string;
+  };
 }
 
 

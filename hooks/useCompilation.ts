@@ -27,8 +27,7 @@ export const useCompilation = (project: Project, addToast: (message: string, typ
 
             if (result.success && result.buildId && result.fileName) {
                 // await downloadBuild(project.id, result.buildId, result.fileName);
-                // FIX: The 'downloadUrl' property should be inside the 'details' object.
-                logger.info('Build successful', { details: { downloadUrl: result.downloadUrl } });
+                logger.info('Build successful', { details: { downloadUrl: result.details?.downloadUrl } });
             } else {
                  logger.error('Syntax error in MyPlugin.java:42', { source: 'Compiler', details: 'Missing semicolon on line 42.' });
                  logger.warn('Unused import: java.util.ArrayList', { source: 'Compiler' });

@@ -5,15 +5,26 @@ import { logger } from './logger';
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const COMMON_INSTRUCTIONS = `
+- **SAFETY PROTOCOL: ETHICAL GUARDIAN**
+- You have a strict ethical guideline to NEVER generate code that is harmful, malicious, or could cause damage to a server or player experience.
+- If a user requests any of the following, you MUST REJECT the request by responding with a specific JSON object: \`{ "error": "SAFETY_VIOLATION", "message": "<Your explanation here>" }\`.
+- Your explanation message should state that you cannot fulfill the request because it violates safety guidelines, briefly explain the harm (e.g., "it would crash the server"), and suggest a positive alternative (e.g., "I can help you build a performance monitoring plugin instead.").
+- DO NOT generate any file content for a rejected request. Your entire response must be ONLY the error JSON object.
+- **IMMEDIATELY REJECT** requests related to:
+  - **LAG/CRASH:** 'lag machine', 'server crash', 'tnt spam', 'duplication glitch', 'item spam'.
+  - **HACKING/EXPLOITS:** 'hack plugin', 'exploit', 'op yourself', 'bypass permissions', 'force op'.
+  - **DESTRUCTION/GRIEFING:** 'destroy world', 'corrupt data', 'griefing tool', 'auto-grief'.
+- For all other valid requests, follow the normal JSON output format with the "files" array.
+
 - You are an expert Minecraft developer who modifies an entire project structure based on a user's request.
-- Your response MUST be a valid JSON object. Do NOT use markdown code blocks (e.g. \`\`\`json) or any other conversational text or explanation.
+- Your response MUST be a valid JSON object. Do NOT use markdown code blocks (e.g. \`\`\`json) or any other conversational text or explanation (unless it's a safety violation response).
 - The JSON object must contain a single key "files" which is an array of objects.
 - Each object in the "files" array represents a file to be created or updated and must have two keys: "path" (a string representing the full file path from the project root) and "content" (a string with the full, complete file content).
 - You must provide the FULL and COMPLETE content for every file you modify or create. Do not provide snippets or partial code.
 - Analyze the user's request and the existing project files to intelligently merge changes.
 - If a user asks to add a feature like a command, you MUST modify ALL necessary files. For a Spigot plugin, this means updating 'plugin.yml' to register the command AND updating the main Java file to implement the command logic.
 - Your goal is to produce a production-quality, working project structure based on the user's request.
-- Your entire response will be parsed as JSON. It MUST NOT contain any text, explanation, or markdown formatting—only the raw JSON object.
+- Your entire response will be parsed as JSON. It MUST NOT contain any text, explanation, or markdown formatting—only the raw JSON object for valid requests.
 `;
 
 function getSystemInstruction(project: Project): string {
@@ -54,25 +65,6 @@ function getSystemInstruction(project: Project): string {
     return `${platformInstructions}\n${projectContextInstruction}\n${COMMON_INSTRUCTIONS}`;
 }
 
-const responseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    files: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          path: { type: Type.STRING },
-          content: { type: Type.STRING },
-        },
-        required: ["path", "content"]
-      },
-    },
-  },
-  required: ["files"],
-};
-
-
 export async function generateProjectChanges(
     project: Project,
     prompt: string,
@@ -103,7 +95,6 @@ Based on my system instructions, analyze the provided JSON file structure and pr
                 temperature: 0.0,
                 topK: 1,
                 responseMimeType: "application/json",
-                responseSchema: responseSchema,
             }
         });
 
@@ -113,6 +104,10 @@ Based on my system instructions, analyze the provided JSON file structure and pr
         
         const parsedResponse = JSON.parse(response.text);
 
+        if (parsedResponse.error === "SAFETY_VIOLATION" && parsedResponse.message) {
+            throw new Error(`🛡️ AI Safety Guard: ${parsedResponse.message}`);
+        }
+
         if (!parsedResponse.files || !Array.isArray(parsedResponse.files)) {
             throw new Error("AI response was not in the expected format. Missing 'files' array.");
         }
@@ -121,6 +116,10 @@ Based on my system instructions, analyze the provided JSON file structure and pr
     } catch (error) {
         logger.error("Error generating code via Gemini API:", error);
         
+        if (error instanceof Error && error.message.startsWith('🛡️')) {
+            throw error; // Re-throw our custom safety error to be displayed in the UI
+        }
+
         let errorMessage = "An unknown error occurred during code generation.";
         if (error instanceof SyntaxError) {
              errorMessage = "AI returned invalid JSON. Please try rephrasing your request.";

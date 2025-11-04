@@ -450,7 +450,7 @@ export async function compileProject(projectId: string): Promise<BuildResult> {
         success,
         buildId: `build_${Date.now()}`,
         message: success ? 'Compilation successful!' : 'Compilation failed. See console for details.',
-        downloadUrl: success ? `/api/projects/${projectId}/download/build_${Date.now()}` : undefined,
+        details: success ? { downloadUrl: `/api/projects/${projectId}/download/build_${Date.now()}` } : undefined,
         fileName: success ? `${projectId}.jar` : undefined,
         compatibleServers: success ? ['Paper 1.20.x', 'Spigot 1.20.x'] : [],
         fileSize: success ? 12345 : undefined,
