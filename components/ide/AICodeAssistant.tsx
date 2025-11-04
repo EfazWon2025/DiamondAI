@@ -27,9 +27,9 @@ interface SpeechRecognition extends EventTarget {
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'https://esm.sh/react-markdown@9';
-import { generatePlanStream, generateProjectChangesStream } from '../../services/geminiService.ts';
+import { generateAssistantResponseStream, generateProjectChangesStream } from '../../services/geminiService.ts';
 import { processFile } from '../../services/fileProcessor.ts';
-import type { Project, ToastMessage, AIFileModification } from '../../types';
+import type { Project, ToastMessage, AIFileModification, ChatTurn } from '../../types';
 import { Icon } from '../Icon.tsx';
 import { CodeEditor } from './CodeEditor.tsx';
 
@@ -54,18 +54,6 @@ const StreamingIndicator: React.FC<{ title: string }> = ({ title }) => (
     </div>
 );
 
-interface ChatTurn {
-    id: string;
-    prompt: string;
-    plan?: string;
-    modifications?: AIFileModification[];
-    status: 'plan_pending' | 'plan_completed' | 'code_pending' | 'code_completed' | 'applied' | 'error' | 'discarded';
-    errorMessage?: string;
-    fileContextName?: string;
-    fileContextContent?: string | null;
-    preModificationContent?: Record<string, string>;
-    streamedCode?: string;
-}
 
 const UserMessage: React.FC<{ turn: ChatTurn }> = ({ turn }) => (
     <div className="flex justify-end mb-4">
@@ -105,6 +93,14 @@ const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply:
 
     const renderContent = () => {
         switch (status) {
+            case 'pending_response':
+                 return <StreamingIndicator title="AI is thinking..." />;
+            case 'chat_response':
+                return (
+                     <div className="ai-plan-display p-3 prose prose-sm prose-invert max-w-none rounded-md">
+                        <ReactMarkdown>{turn.chatResponse || ''}</ReactMarkdown>
+                    </div>
+                );
             case 'plan_pending':
             case 'plan_completed':
                 if (status === 'plan_pending' && !plan) {
@@ -288,15 +284,14 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
   
   const handleAttachClick = () => fileInputRef.current?.click();
 
-  const handleGeneratePlan = async () => {
+  const handleSendMessage = async () => {
     if (!prompt.trim() || !project || !hasLoadedProject) return;
 
     setIsGenerating(true);
     const newTurn: ChatTurn = {
         id: Date.now().toString(),
         prompt,
-        plan: '', // Start with an empty plan for streaming
-        status: 'plan_pending',
+        status: 'pending_response',
         fileContextName: uploadedFile?.name,
         fileContextContent: fileContent,
     };
@@ -305,20 +300,29 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
     handleRemoveFile();
 
     try {
-        const stream = generatePlanStream(project, newTurn.prompt, fileContents, newTurn.fileContextContent);
-        for await (const chunk of stream) {
-            setChatLog(prev => prev.map(t => 
-                t.id === newTurn.id 
-                ? { ...t, plan: (t.plan || '') + chunk } 
-                : t
-            ));
+        const response = await generateAssistantResponseStream(project, newTurn.prompt, fileContents, newTurn.fileContextContent);
+        const functionCalls = response.functionCalls;
+
+        if (functionCalls && functionCalls.length > 0) {
+            const call = functionCalls[0];
+            if (call.name === 'generateCodePlan' && call.args.plan) {
+                 // Fix: Cast `call.args.plan` to string as expected by the ChatTurn type.
+                 setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, plan: call.args.plan as string, status: 'plan_completed' } : t));
+            } else if (call.name === 'chatResponse' && call.args.message) {
+                 // Fix: Cast `call.args.message` to string as expected by the ChatTurn type.
+                 setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, chatResponse: call.args.message as string, status: 'chat_response' } : t));
+            } else {
+                throw new Error("AI returned an unknown tool call.");
+            }
+        } else {
+             // Fallback to displaying the text if no tool is called
+            const textResponse = response.text;
+            if (textResponse) {
+                setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, chatResponse: textResponse, status: 'chat_response' } : t));
+            } else {
+                throw new Error("AI returned an empty response.");
+            }
         }
-        // After the stream is done, update the status to completed
-        setChatLog(prev => prev.map(t => 
-            t.id === newTurn.id 
-            ? { ...t, status: 'plan_completed' } 
-            : t
-        ));
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
         setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, errorMessage, status: 'error' } : t));
@@ -418,18 +422,17 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
 
       <div className="flex-grow p-4 overflow-y-auto flex flex-col-reverse">
         <div ref={chatEndRef} />
-        {isGenerating && chatLog[0]?.status === 'plan_pending' && <AiMessage turn={chatLog[0]} onGenerateCode={()=>{}} onApply={() => {}} onDiscard={() => {}} onRestore={() => {}} />}
-        {chatLog.slice(isGenerating ? 1 : 0).map(turn => (
+        {chatLog.map(turn => (
             <React.Fragment key={turn.id}>
                 <AiMessage turn={turn} onGenerateCode={() => handleGenerateCode(turn.id)} onApply={() => handleApplyChanges(turn.id)} onDiscard={() => handleDiscard(turn.id)} onRestore={() => handleRestoreChanges(turn.id)} />
                 <UserMessage turn={turn} />
             </React.Fragment>
         ))}
-        {chatLog.length === 0 && !isGenerating && (
+        {chatLog.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center text-light-text p-4 m-auto">
                 <Icon name="sparkles" className="w-16 h-16 text-secondary/10" />
                 <h3 className="mt-4 font-bold text-light">AI Assistant Ready</h3>
-                <p className="mt-1 max-w-xs">{hasLoadedProject ? "Describe the changes you want to make to your project." : "Loading project files..."}</p>
+                <p className="mt-1 max-w-xs">{hasLoadedProject ? "Describe the changes you want to make or ask a question." : "Loading project files..."}</p>
             </div>
         )}
       </div>
@@ -450,7 +453,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
               placeholder={hasLoadedProject ? "e.g., 'add a /heal command'" : "Waiting for project to load..."}
               className="w-full bg-darker border border-secondary/20 rounded-lg p-3 pr-20 resize-none focus:outline-none focus:ring-2 focus:ring-secondary disabled:opacity-50"
               rows={2} disabled={isGenerating || !hasLoadedProject}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && canGenerate) { e.preventDefault(); handleGeneratePlan(); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && canGenerate) { e.preventDefault(); handleSendMessage(); } }}
             />
             <div className="absolute right-2 top-2 flex items-center gap-1">
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.docx,.txt" className="hidden" />
@@ -466,8 +469,8 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
                 </button>
             </div>
         </div>
-        <button onClick={handleGeneratePlan} disabled={!canGenerate} className="w-full mt-2 bg-primary text-darker font-bold py-2.5 px-4 rounded-lg transition-all duration-300 hover:bg-primary/80 disabled:bg-gray-600 disabled:text-light-text/50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-            <Icon name="sparkles" className="w-4 h-4" />Create Plan
+        <button onClick={handleSendMessage} disabled={!canGenerate} className="w-full mt-2 bg-primary text-darker font-bold py-2.5 px-4 rounded-lg transition-all duration-300 hover:bg-primary/80 disabled:bg-gray-600 disabled:text-light-text/50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            <Icon name="sparkles" className="w-4 h-4" />Send
         </button>
       </div>
     </div>

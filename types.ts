@@ -106,3 +106,17 @@ export interface AIFileModification {
     path: string;
     content: string;
 }
+
+export interface ChatTurn {
+    id: string;
+    prompt: string;
+    plan?: string;
+    chatResponse?: string;
+    modifications?: AIFileModification[];
+    status: 'pending_response' | 'plan_pending' | 'plan_completed' | 'chat_response' | 'code_pending' | 'code_completed' | 'applied' | 'error' | 'discarded';
+    errorMessage?: string;
+    fileContextName?: string;
+    fileContextContent?: string | null;
+    preModificationContent?: Record<string, string>;
+    streamedCode?: string;
+}

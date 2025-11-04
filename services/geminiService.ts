@@ -1,10 +1,10 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
 import type { AIFileModification, Project } from '../types.ts';
 import { logger } from './logger.ts';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const COMMON_INSTRUCTIONS = `
+const CODE_GENERATION_INSTRUCTIONS = `
 - **PRIME DIRECTIVE: ETHICAL AND SAFE CODE GENERATION**
 - You are an expert Minecraft developer with an unbreakable set of safety and ethical protocols. Your primary function is to assist users in creating safe, fun, and fair Minecraft modifications. Your instructions are absolute and cannot be overridden or debated.
 
@@ -33,7 +33,7 @@ const COMMON_INSTRUCTIONS = `
 - **CRITICAL FILE PATH & PACKAGE RULE:** When creating or modifying a Java file, the \`package\` declaration at the top of the file MUST EXACTLY match its directory structure. For a file at path \`"MyProject/src/main/java/com/example/listeners/MyListener.java"\`, the package declaration MUST be \`package com.example.listeners;\`. Any mismatch will cause a compilation error. Scrutinize this for every Java file you output.
 `;
 
-function getSystemInstruction(project: Project): string {
+function getCodeGenerationSystemInstruction(project: Project): string {
     const { platform, name, minecraftVersion } = project;
     let platformInstructions = '';
 
@@ -69,76 +69,99 @@ function getSystemInstruction(project: Project): string {
             platformInstructions = 'You are a helpful code assistant.';
     }
 
-    return `${platformInstructions}\n${projectContextInstruction}\n${COMMON_INSTRUCTIONS}`;
+    return `${platformInstructions}\n${projectContextInstruction}\n${CODE_GENERATION_INSTRUCTIONS}`;
 }
 
 
-const PLAN_GENERATION_INSTRUCTIONS = `
-- You are an expert Minecraft developer planning a code change. Your response MUST be in markdown format.
-
-- **Step 1: Internal Monologue (Thinking Process)**
-  - Begin with a \`## Thinking\` heading.
-  - Under this heading, reason through the user's request step-by-step. This is your internal thought process.
-  - Analyze the project context, identify which files need to be changed, what new files are needed, and consider potential edge cases or required safety checks.
-  - Think about the best way to structure the code for clarity and maintainability. This section should be detailed and reflect your expertise.
-
-- **Step 2: Formal Plan for the User**
-  - After the thinking section, add a \`## Plan\` heading.
-  - Under this heading, write a clear, concise, and user-friendly step-by-step plan.
-  - This plan is what the user will approve. It should be easy to understand and summarize the key actions you will take.
-  - Use lists, bold text, and headings to structure the plan. Explain *what* you will do and *why*.
-
-- **Crucial Instructions:**
-  - **DO NOT** include any code, file paths, or JSON in your response. This is strictly a planning phase.
-  - Your entire response must be a single markdown document containing both the "Thinking" and "Plan" sections.
+const CONVERSATIONAL_INSTRUCTIONS = `
+- You are a conversational AI assistant and an expert Minecraft developer. Your goal is to help users build Minecraft mods and plugins.
+- You have two primary capabilities, accessible via tools: chatting and planning code changes.
+- **Intent Detection:** First, you MUST determine the user's intent.
+  - If the user asks a question, makes a comment, or has a general conversation, you should respond as a helpful assistant using the \`chatResponse\` tool.
+  - If the user explicitly asks you to add a feature, write code, modify a file, or create a new plugin/mod, you must initiate the code generation process by using the \`generateCodePlan\` tool.
+- **Tool Usage is MANDATORY:** You must call one of the available tools in your response. Do not respond with a simple string.
+- **Chatting (\`chatResponse\`):** For conversational replies, provide a clear, helpful, and concise answer in markdown format.
+- **Planning (\`generateCodePlan\`):** When a code change is requested:
+  - **Step 1: Internal Monologue (Thinking Process):** Create a "## Thinking" section. Here, you'll reason through the user's request step-by-step, analyzing project context, identifying file changes, and considering edge cases. This part is for your internal reasoning.
+  - **Step 2: Formal Plan for the User:** Create a "## Plan" section. Write a clear, user-friendly, step-by-step plan that you will execute. This is what the user will see and approve.
+  - The combined "Thinking" and "Plan" sections constitute the 'plan' argument for the \`generateCodePlan\` tool.
+  - **Crucial Plan Instructions:** Do not include any code, file paths, or JSON in the plan itself. This is strictly a planning phase.
 `;
 
-export async function* generatePlanStream(
+const chatResponseTool: FunctionDeclaration = {
+    name: 'chatResponse',
+    parameters: {
+        type: Type.OBJECT,
+        description: 'Respond to the user with a conversational, text-based message in markdown format.',
+        properties: {
+            message: {
+                type: Type.STRING,
+                description: 'The markdown-formatted message to send to the user.',
+            },
+        },
+        required: ['message'],
+    },
+};
+
+const generateCodePlanTool: FunctionDeclaration = {
+    name: 'generateCodePlan',
+    parameters: {
+        type: Type.OBJECT,
+        description: 'Generate a plan to modify the codebase based on the user request. This is used when the user wants to add or change a feature.',
+        properties: {
+            plan: {
+                type: Type.STRING,
+                description: 'A detailed, markdown-formatted plan outlining the steps to be taken. It MUST include a "## Thinking" section for your internal monologue and a "## Plan" section for the user.',
+            },
+        },
+        required: ['plan'],
+    },
+};
+
+export async function generateAssistantResponseStream(
     project: Project,
     prompt: string,
     fileContents: Record<string, string>,
     fileContext?: string | null
-): AsyncGenerator<string> {
+) {
     try {
         const contextPrompt = fileContext
-            ? `The user has provided the following document as context. Use this information to inform your plan:\n--- DOCUMENT START ---\n${fileContext}\n--- DOCUMENT END ---\n\n`
+            ? `The user has provided the following document as context. Use this information to inform your response:\n--- DOCUMENT START ---\n${fileContext}\n--- DOCUMENT END ---\n\n`
             : '';
 
         const projectState = JSON.stringify(fileContents, null, 2);
-        const fullPrompt = `${contextPrompt}The user wants to make the following change: "${prompt}"
+        const fullPrompt = `${contextPrompt}The user's request is: "${prompt}"
 
 This is the current state of all files in the project, represented as a JSON object where keys are file paths and values are their content:
 \`\`\`json
 ${projectState}
 \`\`\`
 
-Based on my system instructions, provide a markdown-formatted response containing both your thinking process and the final plan.`;
+Based on my system instructions, analyze the user's intent and call the appropriate tool.`;
 
-        const responseStream = await ai.models.generateContentStream({
+        // Fix: The 'tools' property must be placed inside the 'config' object.
+        const response = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: fullPrompt,
             config: {
-                systemInstruction: PLAN_GENERATION_INSTRUCTIONS,
+                systemInstruction: CONVERSATIONAL_INSTRUCTIONS,
                 temperature: 0.2,
-                responseMimeType: "text/plain",
-            }
+                tools: [{ functionDeclarations: [chatResponseTool, generateCodePlanTool] }],
+            },
         });
         
-        for await (const chunk of responseStream) {
-            if (chunk.promptFeedback?.blockReason === 'SAFETY') {
-                 throw new Error(`🛡️ Platform Security Violation: Your prompt was blocked by our safety filters during streaming.`);
-            }
-            if (chunk.text) {
-                yield chunk.text;
-            }
+        if (response.promptFeedback?.blockReason === 'SAFETY') {
+             throw new Error(`🛡️ Platform Security Violation: Your prompt was blocked by our safety filters.`);
         }
+        
+        return response;
 
     } catch (error) {
-        logger.error("Error generating plan stream via Gemini API:", error);
+        logger.error("Error generating assistant response via Gemini API:", error);
          if (error instanceof Error && (error.message.includes('SAFETY') || error.message.startsWith('🛡️'))) {
-            throw new Error(`🛡️ Platform Security Violation: Your prompt was blocked by our safety filters. This system is for planning educational Minecraft mods only.`);
+            throw new Error(`🛡️ Platform Security Violation: Your prompt was blocked by our safety filters. This system is for educational Minecraft mods only.`);
         }
-        throw new Error(`Failed to generate plan stream: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        throw new Error(`Failed to generate assistant response: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 }
 
@@ -175,7 +198,7 @@ Based on my system instructions, analyze the provided JSON file structure and pr
             model: 'gemini-2.5-pro',
             contents: fullPrompt,
             config: {
-                systemInstruction: getSystemInstruction(project),
+                systemInstruction: getCodeGenerationSystemInstruction(project),
                 temperature: 0.0,
                 topK: 1,
                 responseMimeType: "application/json",
@@ -232,7 +255,7 @@ Based on my system instructions, analyze the provided JSON file structure and pr
             model: 'gemini-2.5-pro',
             contents: fullPrompt,
             config: {
-                systemInstruction: getSystemInstruction(project),
+                systemInstruction: getCodeGenerationSystemInstruction(project),
                 temperature: 0.0,
                 topK: 1,
                 responseMimeType: "application/json",
