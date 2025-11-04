@@ -44,7 +44,7 @@ interface IdeViewProps {
 }
 
 const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) => {
-    const { fileTree, fileContents, openFiles, activePath, setActivePath, handleFileSelect, handleCloseFile, handleCodeChange, handleAiApplyMultipleChanges, findFileInTree, dirtyFiles, saveFile, renameNode, deleteNode } = useFileManagement(project, addToast);
+    const { fileTree, fileContents, openFiles, activePath, setActivePath, handleFileSelect, handleCloseFile, handleCodeChange, handleAiApplyMultipleChanges, handleAiRestoreChanges, findFileInTree, dirtyFiles, saveFile, renameNode, deleteNode } = useFileManagement(project, addToast);
     const { panelWidths, bottomPanelHeight, handleMouseDownVertical, handleMouseDownHorizontal, ideContainerRef } = usePanelResizing();
     const { compilationStatus, handleCompileProject } = useCompilation(project, addToast);
     
@@ -164,7 +164,7 @@ const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) => {
                         <button onClick={() => setRightPanelTab('settings')} className={`py-2 px-4 ${rightPanelTab === 'settings' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>SETTINGS</button>
                     </div>
                     <div className="flex-grow overflow-auto">
-                        {rightPanelTab === 'ai' && <AICodeAssistant project={project} fileContents={fileContents} onApplyChanges={handleAiApplyMultipleChanges} addToast={addToast} />}
+                        {rightPanelTab === 'ai' && <AICodeAssistant project={project} fileContents={fileContents} onApplyChanges={handleAiApplyMultipleChanges} onRestoreChanges={handleAiRestoreChanges} addToast={addToast} />}
                         {rightPanelTab === 'assets' && <AssetPreview activeFile={currentFile} />}
                         {rightPanelTab === 'settings' && <SettingsPanel />}
                     </div>

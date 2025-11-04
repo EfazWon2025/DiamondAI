@@ -80,10 +80,9 @@ interface CodeEditorProps {
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({ value = '', onChange, onCursorChange, language = 'java', readOnly = false }) => {
   const lines = value.split('\n').length;
-  const preRef = useRef<HTMLPreElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
-  const highlightedCode = highlightJava(value) + '\n';
+  const highlightedCode = (language === 'java' ? highlightJava(value) : escapeHtml(value)) + '\n';
 
   const updateCursorPosition = useCallback(() => {
     if (!onCursorChange || !textareaRef.current) return;
@@ -98,39 +97,36 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ value = '', onChange, on
 
 
   useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    const pre = preRef.current;
-    if (!textarea || !pre) return;
-    const syncScroll = () => {
-      pre.scrollTop = textarea.scrollTop;
-      pre.scrollLeft = textarea.scrollLeft;
-    };
-    textarea.addEventListener('scroll', syncScroll);
     updateCursorPosition();
-    return () => textarea.removeEventListener('scroll', syncScroll);
   }, [value, updateCursorPosition]);
 
+  const commonClasses = "w-full p-4 m-0 bg-transparent outline-none resize-none whitespace-pre-wrap break-words leading-relaxed font-mono text-sm";
+
   return (
-    <div className="relative h-full font-mono text-sm bg-darker overflow-hidden flex">
+    <div className="font-mono text-sm bg-darker flex">
       <LineNumbers count={lines} />
-      <div className="relative flex-1 h-full">
+      <div className="relative flex-1 grid">
+        <pre 
+          className={`${commonClasses} text-light pointer-events-none`}
+          style={{ gridArea: '1 / 1' }} 
+          aria-hidden="true"
+        >
+          <code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+        </pre>
         <textarea
           ref={textareaRef}
           value={value}
           onChange={(e) => !readOnly && onChange(e.target.value)}
           onKeyUp={updateCursorPosition}
           onClick={updateCursorPosition}
-          className="absolute inset-0 w-full h-full p-4 bg-transparent caret-light outline-none resize-none whitespace-pre-wrap break-words leading-relaxed overflow-auto font-mono text-sm text-transparent"
-          style={{ fontFamily: "'JetBrains Mono', monospace", WebkitTextFillColor: 'transparent', tabSize: 4 }}
+          className={`${commonClasses} caret-light text-transparent overflow-hidden`}
+          style={{ gridArea: '1 / 1', WebkitTextFillColor: 'transparent', tabSize: 4 }}
           spellCheck="false"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
           readOnly={readOnly}
         />
-        <pre ref={preRef} className="absolute inset-0 w-full h-full text-light outline-none p-4 m-0 whitespace-pre-wrap break-words leading-relaxed overflow-hidden pointer-events-none" aria-hidden="true">
-          <code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
-        </pre>
       </div>
     </div>
   );

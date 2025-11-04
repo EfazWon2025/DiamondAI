@@ -30,6 +30,7 @@ const COMMON_INSTRUCTIONS = `
 - Each object in the "files" array represents a file to be created or updated and must have two keys: "path" (a string representing the full file path from the project root) and "content" (a string with the full, complete file content).
 - You must provide the FULL and COMPLETE content for every file you modify or create. Do not provide snippets or partial code.
 - Analyze the user's request and the existing project files to intelligently merge changes. Your goal is to produce a production-quality, working project structure.
+- **CRITICAL FILE PATH & PACKAGE RULE:** When creating or modifying a Java file, the \`package\` declaration at the top of the file MUST EXACTLY match its directory structure. For a file at path \`"MyProject/src/main/java/com/example/listeners/MyListener.java"\`, the package declaration MUST be \`package com.example.listeners;\`. Any mismatch will cause a compilation error. Scrutinize this for every Java file you output.
 `;
 
 function getSystemInstruction(project: Project): string {
@@ -50,6 +51,7 @@ function getSystemInstruction(project: Project): string {
             platformInstructions = `You are an expert in Spigot/Paper/Bukkit plugin development.
 - Key Files: Logic is in Java files. Configuration is in 'plugin.yml'.
 - Versioning: Ensure 'plugin.yml' \`api-version\` matches the project's Minecraft version (e.g., '1.20' for 1.20.4). Ensure the build file ('pom.xml' or 'build.gradle') uses the correct Java version (Java 17 for Minecraft 1.18+).
+- Code Organization: For better organization, use sub-packages like 'listeners', 'commands', 'utils', etc. For example, a PlayerJoinEvent listener should be in a class named 'PlayerJoinListener.java' inside a 'listeners' sub-package.
 - Commands: Register commands in 'plugin.yml' and implement them using CommandExecutor. Include permission checks.
 - Events: Use @EventHandler for event listeners.
 - Safety First: For operations like teleportation, ALWAYS perform safety checks. Ensure the destination location is safe and won't cause the player to get stuck or take damage. Use methods like getHighestBlockAt() or check for solid blocks.
@@ -137,6 +139,63 @@ Based on my system instructions, provide a markdown-formatted response containin
             throw new Error(`🛡️ Platform Security Violation: Your prompt was blocked by our safety filters. This system is for planning educational Minecraft mods only.`);
         }
         throw new Error(`Failed to generate plan stream: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+}
+
+
+export async function* generateProjectChangesStream(
+    project: Project,
+    prompt: string,
+    fileContents: Record<string, string>,
+    plan: string,
+    fileContext?: string | null
+): AsyncGenerator<string> {
+     try {
+        const contextPrompt = fileContext
+            ? `The user has provided the following document as context. Use this information to inform your code generation:\n--- DOCUMENT START ---\n${fileContext}\n--- DOCUMENT END ---\n\n`
+            : '';
+
+        const projectState = JSON.stringify(fileContents, null, 2);
+
+        const fullPrompt = `${contextPrompt}The user wants to make the following change: "${prompt}"
+
+You have already created the following plan:
+--- PLAN START ---
+${plan}
+--- PLAN END ---
+
+Now, execute this plan. This is the current state of all files in the project, represented as a JSON object where keys are file paths and values are their content:
+\`\`\`json
+${projectState}
+\`\`\`
+
+Based on my system instructions, analyze the provided JSON file structure and provide a new JSON object in the specified format containing the full, updated content for all necessary files.`;
+
+        const responseStream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-pro',
+            contents: fullPrompt,
+            config: {
+                systemInstruction: getSystemInstruction(project),
+                temperature: 0.0,
+                topK: 1,
+                responseMimeType: "application/json",
+            }
+        });
+        
+        for await (const chunk of responseStream) {
+             if (chunk.promptFeedback?.blockReason === 'SAFETY') {
+                 throw new Error(`🛡️ Platform Security Violation: Your prompt was blocked by our safety filters during streaming.`);
+            }
+            if (chunk.text) {
+                yield chunk.text;
+            }
+        }
+    } catch (error) {
+        logger.error("Error generating code stream via Gemini API:", error);
+         if (error instanceof Error && (error.message.includes('SAFETY') || error.message.startsWith('🛡️'))) {
+            throw new Error(`🛡️ Platform Security Violation: Your prompt was blocked by our safety filters. This system is for planning educational Minecraft mods only.`);
+        }
+        throw new Error(`Failed to generate code stream: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 }
 

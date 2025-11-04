@@ -22,6 +22,53 @@
       .font-inter { font-family: 'Inter', sans-serif; }
       .font-mono { font-family: 'JetBrains Mono', monospace; }
 
+      /* AI Plan Display Custom Styles */
+      .ai-plan-display h1,
+      .ai-plan-display h2,
+      .ai-plan-display h3,
+      .ai-plan-display h4,
+      .ai-plan-display h5,
+      .ai-plan-display h6 {
+        font-family: inherit !important; /* Use same font as paragraph text */
+        font-size: inherit !important; /* Use same font size as paragraph text */
+        font-weight: 700 !important; /* Make headings bold */
+        margin-top: 0.5em;
+        margin-bottom: 0.25em;
+      }
+      /* Reduce spacing for paragraphs inside lists for a more compact plan view */
+      .ai-plan-display li p {
+        margin-top: 0.25em;
+        margin-bottom: 0.25em;
+      }
+      /* Remove top margin from the first element inside a list item */
+      .ai-plan-display li > :first-child {
+        margin-top: 0;
+      }
+      /* Remove bottom margin from the last element inside a list item */
+      .ai-plan-display li > :last-child {
+        margin-bottom: 0;
+      }
+
+      /* Custom Scrollbar for Webkit browsers */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #1A1A2E; /* dark */
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #7B68EE80; /* secondary with transparency */
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #7B68EE; /* secondary */
+      }
+      /* Remove scrollbar arrows */
+      ::-webkit-scrollbar-button {
+        display: none;
+      }
+
       /* Performance Optimizations */
       .gpu-accelerate {
         transform: translateZ(0);

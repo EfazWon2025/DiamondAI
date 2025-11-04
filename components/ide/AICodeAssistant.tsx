@@ -27,7 +27,7 @@ interface SpeechRecognition extends EventTarget {
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'https://esm.sh/react-markdown@9';
-import { generatePlanStream, generateProjectChanges } from '../../services/geminiService.ts';
+import { generatePlanStream, generateProjectChangesStream } from '../../services/geminiService.ts';
 import { processFile } from '../../services/fileProcessor.ts';
 import type { Project, ToastMessage, AIFileModification } from '../../types';
 import { Icon } from '../Icon.tsx';
@@ -41,7 +41,7 @@ const CodeSkeletonLoader: React.FC = () => (
   </div>
 );
 
-const ThinkingIndicator: React.FC<{ title: string }> = ({ title }) => (
+const StreamingIndicator: React.FC<{ title: string }> = ({ title }) => (
     <div className="p-4 flex flex-col items-center justify-center text-light-text">
         <div className="flex items-center gap-2">
             <Icon name="sparkles" className="w-5 h-5 text-primary animate-pulse" />
@@ -54,7 +54,6 @@ const ThinkingIndicator: React.FC<{ title: string }> = ({ title }) => (
     </div>
 );
 
-
 interface ChatTurn {
     id: string;
     prompt: string;
@@ -64,6 +63,8 @@ interface ChatTurn {
     errorMessage?: string;
     fileContextName?: string;
     fileContextContent?: string | null;
+    preModificationContent?: Record<string, string>;
+    streamedCode?: string;
 }
 
 const UserMessage: React.FC<{ turn: ChatTurn }> = ({ turn }) => (
@@ -80,7 +81,7 @@ const UserMessage: React.FC<{ turn: ChatTurn }> = ({ turn }) => (
     </div>
 );
 
-const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply: () => void; onDiscard: () => void; }> = ({ turn, onGenerateCode, onApply, onDiscard }) => {
+const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply: () => void; onDiscard: () => void; onRestore: () => void; }> = ({ turn, onGenerateCode, onApply, onDiscard, onRestore }) => {
     const [isThinkingExpanded, setIsThinkingExpanded] = useState(true);
     const { plan, status } = turn;
 
@@ -107,11 +108,11 @@ const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply:
             case 'plan_pending':
             case 'plan_completed':
                 if (status === 'plan_pending' && !plan) {
-                    return <ThinkingIndicator title="AI is generating a plan..." />;
+                    return <StreamingIndicator title="AI is generating a plan..." />;
                 }
                 return (
                     <div className="flex flex-col min-h-0">
-                         <div className="max-h-96 overflow-y-auto p-3 prose prose-sm prose-invert max-w-none rounded-t-md">
+                         <div className="ai-plan-display max-h-96 overflow-y-auto p-3 prose prose-sm prose-invert max-w-none rounded-t-md">
                             {thinkingText && (
                                 <div className="mb-4 bg-dark p-3 rounded-md border border-secondary/10">
                                     <button 
@@ -145,7 +146,18 @@ const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply:
                     </div>
                 );
             case 'code_pending':
-                return <ThinkingIndicator title="AI is writing code..." />;
+                 return (
+                    <div className="flex flex-col min-h-0">
+                        <div className="p-3 bg-darker rounded-t-md text-light-text text-xs font-semibold flex items-center gap-2">
+                            <Icon name="sparkles" className="w-4 h-4 text-primary animate-pulse" />
+                            AI is writing code...
+                            <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1"></span>
+                        </div>
+                        <div className="max-h-96 overflow-y-auto rounded-b-md">
+                            <CodeEditor value={turn.streamedCode || ''} onChange={() => {}} readOnly language="json" />
+                        </div>
+                    </div>
+                );
             case 'error':
                  return <div className="p-3 text-accent whitespace-pre-wrap">{turn.errorMessage}</div>;
             case 'code_completed':
@@ -167,7 +179,10 @@ const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply:
                                 </>
                             )}
                             {turn.status === 'applied' && (
-                                <span className="text-primary text-xs font-bold px-2 py-0.5 bg-primary/20 rounded-full flex items-center gap-1"><Icon name="checkCircle2" className="w-3 h-3" />Applied</span>
+                                <>
+                                    <button onClick={onRestore} className="px-3 py-1 bg-dark text-light-text rounded hover:bg-dark/50 border border-secondary/20 font-semibold text-xs">Restore</button>
+                                    <span className="text-primary text-xs font-bold px-2 py-0.5 bg-primary/20 rounded-full flex items-center gap-1"><Icon name="checkCircle2" className="w-3 h-3" />Applied</span>
+                                </>
                             )}
                              {turn.status === 'discarded' && (
                                 <span className="text-light-text/70 text-xs font-semibold px-2 py-0.5">Discarded</span>
@@ -194,10 +209,11 @@ interface AICodeAssistantProps {
   project: Project | null;
   fileContents: Record<string, string>;
   onApplyChanges: (modifications: AIFileModification[]) => void;
+  onRestoreChanges: (filesToRestore: Record<string, string>) => void;
   addToast: (message: string, type?: ToastMessage['type']) => void;
 }
 
-export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileContents, onApplyChanges, addToast }) => {
+export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileContents, onApplyChanges, onRestoreChanges, addToast }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatLog, setChatLog] = useState<ChatTurn[]>([]);
@@ -314,27 +330,51 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
   const handleGenerateCode = async (turnId: string) => {
     const turn = chatLog.find(t => t.id === turnId);
     if (!turn || !turn.plan || !project) return;
+
+    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'code_pending', streamedCode: '' } : t));
     
-    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'code_pending' } : t));
-    
+    let finalCode = '';
     try {
-      const modifications = await generateProjectChanges(project, turn.prompt, fileContents, turn.plan, turn.fileContextContent);
-      setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, modifications, status: 'code_completed' } : t));
+        const stream = generateProjectChangesStream(project, turn.prompt, fileContents, turn.plan, turn.fileContextContent);
+        for await (const chunk of stream) {
+            finalCode += chunk;
+            setChatLog(prev => prev.map(t => 
+                t.id === turnId 
+                ? { ...t, streamedCode: finalCode } 
+                : t
+            ));
+        }
+
+        const parsedResponse = JSON.parse(finalCode);
+        
+        if (parsedResponse.error === "PLATFORM_SECURITY_VIOLATION") {
+            throw new Error(`🛡️ Platform Security Violation: ${parsedResponse.message}`);
+        }
+        if (parsedResponse.error === "SAFETY_VIOLATION") {
+            throw new Error(`🛡️ AI Safety Guard: ${parsedResponse.message}`);
+        }
+        if (!parsedResponse.files || !Array.isArray(parsedResponse.files)) {
+            throw new Error("AI response was not in the expected format. Missing 'files' array.");
+        }
+
+        const modifications: AIFileModification[] = parsedResponse.files;
+        setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, modifications, status: 'code_completed' } : t));
+
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-      
-      if (errorMessage.includes('Platform Security Violation')) {
-          const banDuration = 5 * 60 * 60 * 1000; // 5 hours
-          const expirationTime = Date.now() + banDuration;
-          localStorage.setItem('banExpiresAt', expirationTime.toString());
-          addToast(errorMessage, 'error');
-          
-          setTimeout(() => {
-              window.location.reload();
-          }, 2000);
-      } else {
-          setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, errorMessage, status: 'error' } : t));
-      }
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during code generation.";
+        
+        if (errorMessage.includes('Platform Security Violation')) {
+            const banDuration = 5 * 60 * 60 * 1000; // 5 hours
+            const expirationTime = Date.now() + banDuration;
+            localStorage.setItem('banExpiresAt', expirationTime.toString());
+            addToast(errorMessage, 'error');
+            
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, errorMessage, status: 'error' } : t));
+        }
     }
   };
 
@@ -342,8 +382,23 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
   const handleApplyChanges = (turnId: string) => {
     const turn = chatLog.find(t => t.id === turnId);
     if (!turn || !turn.modifications || turn.modifications.length === 0) return;
+    
+    const preModificationContent: Record<string, string> = {};
+    for (const mod of turn.modifications) {
+        preModificationContent[mod.path] = fileContents[mod.path] ?? ''; // Store original content or empty for new files
+    }
+
     onApplyChanges(turn.modifications);
-    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'applied' } : t));
+    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'applied', preModificationContent } : t));
+  };
+
+  const handleRestoreChanges = (turnId: string) => {
+    const turn = chatLog.find(t => t.id === turnId);
+    if (!turn || !turn.preModificationContent) return;
+
+    onRestoreChanges(turn.preModificationContent);
+    setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'code_completed' } : t));
+    addToast('Changes have been restored.', 'info');
   };
 
   const handleDiscard = (turnId: string) => {
@@ -363,10 +418,10 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
 
       <div className="flex-grow p-4 overflow-y-auto flex flex-col-reverse">
         <div ref={chatEndRef} />
-        {isGenerating && chatLog[0]?.status === 'plan_pending' && <AiMessage turn={chatLog[0]} onGenerateCode={()=>{}} onApply={() => {}} onDiscard={() => {}} />}
+        {isGenerating && chatLog[0]?.status === 'plan_pending' && <AiMessage turn={chatLog[0]} onGenerateCode={()=>{}} onApply={() => {}} onDiscard={() => {}} onRestore={() => {}} />}
         {chatLog.slice(isGenerating ? 1 : 0).map(turn => (
             <React.Fragment key={turn.id}>
-                <AiMessage turn={turn} onGenerateCode={() => handleGenerateCode(turn.id)} onApply={() => handleApplyChanges(turn.id)} onDiscard={() => handleDiscard(turn.id)} />
+                <AiMessage turn={turn} onGenerateCode={() => handleGenerateCode(turn.id)} onApply={() => handleApplyChanges(turn.id)} onDiscard={() => handleDiscard(turn.id)} onRestore={() => handleRestoreChanges(turn.id)} />
                 <UserMessage turn={turn} />
             </React.Fragment>
         ))}
