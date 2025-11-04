@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Project, FileTreeNode } from '../types';
-import { getProjectFiles, getFileContent, writeFileContent, renameFileOrFolder, deleteFileOrFolder } from '../services/api';
+import type { Project, FileTreeNode, AIFileModification } from '../types';
+import { getProjectFiles, getFileContent, writeFileContent, renameFileOrFolder, deleteFileOrFolder, createFile } from '../services/api';
 
 const useOptimisticTreeUpdate = (initialTree: FileTreeNode | null, addToast: (message: string, type?: 'success' | 'info' | 'error') => void) => {
     const [tree, setTree] = useState<FileTreeNode | null>(initialTree);
@@ -63,7 +63,7 @@ const useOptimisticTreeUpdate = (initialTree: FileTreeNode | null, addToast: (me
 
 export const useFileManagement = (project: Project, addToast: (message: string, type?: 'success' | 'info' | 'error') => void) => {
     const [initialFileTree, setInitialFileTree] = useState<FileTreeNode | null>(null);
-    const { tree: fileTree, renameNode, deleteNode } = useOptimisticTreeUpdate(initialFileTree, addToast);
+    const { tree: fileTree, setTree: setOptimisticTree } = useOptimisticTreeUpdate(initialFileTree, addToast);
     
     const [fileContents, setFileContents] = useState<Record<string, string>>({});
     const [openFiles, setOpenFiles] = useState<FileTreeNode[]>([]);
@@ -81,13 +81,26 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
         return null;
     }, []);
 
-    useEffect(() => {
-        getProjectFiles(project.id).then(tree => {
+    const refreshProjectFiles = useCallback(async () => {
+        try {
+            const tree = await getProjectFiles(project.id);
             setInitialFileTree(tree);
-            const mainJavaFile = findFileInTree(tree, '.java');
-            if (mainJavaFile) handleFileSelect(mainJavaFile);
-        }).catch(() => addToast('Failed to load project files.', 'error'));
-    }, [project, findFileInTree, addToast]);
+            return tree;
+        } catch {
+            addToast('Failed to load project files.', 'error');
+            return null;
+        }
+    }, [project.id, addToast]);
+
+
+    useEffect(() => {
+        refreshProjectFiles().then(tree => {
+             if (tree) {
+                const mainJavaFile = findFileInTree(tree, '.java');
+                if (mainJavaFile) handleFileSelect(mainJavaFile);
+            }
+        });
+    }, [project, findFileInTree, refreshProjectFiles]);
 
     const handleFileSelect = async (file: FileTreeNode) => {
         if (file.type !== 'file') return;
@@ -95,7 +108,7 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
         if (!openFiles.some(f => f.path === file.path)) setOpenFiles(prev => [...prev, file]);
         setActivePath(file.path);
 
-        if (!fileContents[file.path]) {
+        if (fileContents[file.path] === undefined) {
             try {
                 const content = await getFileContent(project.id, file.path);
                 setFileContents(prev => ({ ...prev, [file.path]: content }));
@@ -143,14 +156,57 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
         }
     };
 
-    const handleAiApplyChanges = (path: string, newCode: string) => {
-        if (path !== 'visual-builder' && path !== '') {
-            handleCodeChange(path, newCode, true);
-            addToast("AI changes applied and saved.", "success");
-        } else {
-            addToast("No active file to apply changes to.", "error");
+    const handleAiApplyMultipleChanges = async (modifications: AIFileModification[]) => {
+        try {
+            const newContents = { ...fileContents };
+            const existingFilePaths = new Set(Object.keys(fileContents));
+            
+            for (const mod of modifications) {
+                if (existingFilePaths.has(mod.path)) {
+                    await writeFileContent(project.id, mod.path, mod.content);
+                } else {
+                    await createFile(project.id, mod.path);
+                    await writeFileContent(project.id, mod.path, mod.content);
+                }
+                newContents[mod.path] = mod.content;
+            }
+            
+            setFileContents(newContents);
+            
+            // Open newly created/modified files
+            modifications.forEach(mod => {
+                 if (fileTree) {
+                    const findNode = (node: FileTreeNode, path: string): FileTreeNode | null => {
+                        if (node.path === path) return node;
+                        if (node.children) {
+                            for(const child of node.children) {
+                                const found = findNode(child, path);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    };
+                    const node = findNode(fileTree, mod.path);
+                    if (node && node.type === 'file' && !openFiles.some(f => f.path === node.path)) {
+                        setOpenFiles(prev => [...prev, node]);
+                    }
+                 }
+            });
+
+            if (modifications.length > 0) {
+                 setActivePath(modifications[modifications.length - 1].path);
+            }
+            
+            setDirtyFiles(new Set()); // All files are saved
+            await refreshProjectFiles(); // Refresh tree to show new files
+            addToast("AI changes applied successfully!", "success");
+
+        } catch (error) {
+             addToast(error instanceof Error ? error.message : "Failed to apply AI changes.", "error");
         }
     };
+
+    const { renameNode, deleteNode } = useOptimisticTreeUpdate(initialFileTree, addToast);
 
     return {
         fileTree,
@@ -162,7 +218,7 @@ export const useFileManagement = (project: Project, addToast: (message: string, 
         handleFileSelect,
         handleCloseFile,
         handleCodeChange,
-        handleAiApplyChanges,
+        handleAiApplyMultipleChanges,
         findFileInTree,
         saveFile,
         renameNode,

@@ -99,3 +99,8 @@ export interface LogEntry {
     source?: 'Compiler' | 'System';
     details?: string;
 }
+
+export interface AIFileModification {
+    path: string;
+    content: string;
+}

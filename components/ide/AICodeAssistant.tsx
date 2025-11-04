@@ -26,9 +26,9 @@ interface SpeechRecognition extends EventTarget {
 }
 
 import React, { useState, useEffect, useRef } from 'react';
-import { generatePluginCode } from '../../services/geminiService';
+import { generateProjectChanges } from '../../services/geminiService';
 import { processFile } from '../../services/fileProcessor';
-import type { Project, ToastMessage } from '../../types';
+import type { Project, ToastMessage, AIFileModification } from '../../types';
 import { Icon } from '../Icon';
 import { CodeEditor } from './CodeEditor';
 
@@ -43,8 +43,9 @@ const CodeSkeletonLoader: React.FC = () => (
 interface ChatTurn {
     id: string;
     prompt: string;
-    responseCode: string;
+    modifications: AIFileModification[];
     status: 'pending' | 'completed' | 'applied' | 'error' | 'discarded';
+    errorMessage?: string;
     fileContextName?: string;
 }
 
@@ -62,45 +63,51 @@ const UserMessage: React.FC<{ turn: ChatTurn }> = ({ turn }) => (
     </div>
 );
 
-const AiMessage: React.FC<{ turn: ChatTurn; onApply: () => void; onDiscard: () => void; }> = ({ turn, onApply, onDiscard }) => (
-    <div className="flex justify-start mb-4">
-        <div className="bg-darker p-1 rounded-lg w-full shadow-md border border-secondary/10">
-            {turn.status === 'pending' && <CodeSkeletonLoader />}
-            {turn.status === 'error' && <div className="p-3 text-accent">{turn.responseCode}</div>}
-            {(turn.status === 'completed' || turn.status === 'applied' || turn.status === 'discarded') && (
-                <div className="flex flex-col min-h-0">
-                    <div className="max-h-96 overflow-y-auto rounded-t-md">
-                        <CodeEditor value={turn.responseCode} onChange={() => {}} readOnly />
+const AiMessage: React.FC<{ turn: ChatTurn; onApply: () => void; onDiscard: () => void; }> = ({ turn, onApply, onDiscard }) => {
+    const codeToDisplay = turn.modifications
+        .map(mod => `// Path: ${mod.path}\n\n${mod.content}`)
+        .join('\n\n// ----------------------------------------\n\n');
+
+    return (
+        <div className="flex justify-start mb-4">
+            <div className="bg-darker p-1 rounded-lg w-full shadow-md border border-secondary/10">
+                {turn.status === 'pending' && <CodeSkeletonLoader />}
+                {turn.status === 'error' && <div className="p-3 text-accent">{turn.errorMessage}</div>}
+                {(turn.status === 'completed' || turn.status === 'applied' || turn.status === 'discarded') && (
+                    <div className="flex flex-col min-h-0">
+                        <div className="max-h-96 overflow-y-auto rounded-t-md">
+                            <CodeEditor value={codeToDisplay} onChange={() => {}} readOnly />
+                        </div>
+                        <div className="p-2 flex justify-end items-center gap-2 border-t border-secondary/10">
+                            {turn.status === 'completed' && (
+                                <>
+                                    <button onClick={onDiscard} className="px-3 py-1 bg-dark text-light-text rounded hover:bg-dark/50 border border-secondary/20 font-semibold text-xs">Discard</button>
+                                    <button onClick={onApply} className="px-3 py-1 bg-primary text-darker rounded hover:bg-primary/80 font-bold text-xs">Apply Changes</button>
+                                </>
+                            )}
+                            {turn.status === 'applied' && (
+                                <span className="text-primary text-xs font-bold px-2 py-0.5 bg-primary/20 rounded-full flex items-center gap-1"><Icon name="checkCircle2" className="w-3 h-3" />Applied</span>
+                            )}
+                             {turn.status === 'discarded' && (
+                                <span className="text-light-text/70 text-xs font-semibold px-2 py-0.5">Discarded</span>
+                            )}
+                        </div>
                     </div>
-                    <div className="p-2 flex justify-end items-center gap-2 border-t border-secondary/10">
-                        {turn.status === 'completed' && (
-                            <>
-                                <button onClick={onDiscard} className="px-3 py-1 bg-dark text-light-text rounded hover:bg-dark/50 border border-secondary/20 font-semibold text-xs">Discard</button>
-                                <button onClick={onApply} className="px-3 py-1 bg-primary text-darker rounded hover:bg-primary/80 font-bold text-xs">Apply</button>
-                            </>
-                        )}
-                        {turn.status === 'applied' && (
-                            <span className="text-primary text-xs font-bold px-2 py-0.5 bg-primary/20 rounded-full flex items-center gap-1"><Icon name="checkCircle2" className="w-3 h-3" />Applied</span>
-                        )}
-                         {turn.status === 'discarded' && (
-                            <span className="text-light-text/70 text-xs font-semibold px-2 py-0.5">Discarded</span>
-                        )}
-                    </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 
 interface AICodeAssistantProps {
   project: Project | null;
-  originalCode: string;
-  onApplyChanges: (newCode: string) => void;
+  fileContents: Record<string, string>;
+  onApplyChanges: (modifications: AIFileModification[]) => void;
   addToast: (message: string, type?: ToastMessage['type']) => void;
 }
 
-export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, originalCode, onApplyChanges, addToast }) => {
+export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileContents, onApplyChanges, addToast }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatLog, setChatLog] = useState<ChatTurn[]>([]);
@@ -112,6 +119,8 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  const hasLoadedProject = Object.keys(fileContents).length > 0;
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -174,13 +183,13 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
   const handleAttachClick = () => fileInputRef.current?.click();
 
   const handleGenerateCode = async () => {
-    if (!prompt.trim() || !project || !originalCode) return;
+    if (!prompt.trim() || !project || !hasLoadedProject) return;
     
     setIsGenerating(true);
     const newTurn: ChatTurn = {
         id: Date.now().toString(),
         prompt,
-        responseCode: '',
+        modifications: [],
         status: 'pending',
         fileContextName: uploadedFile?.name,
     };
@@ -189,23 +198,20 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
     handleRemoveFile();
 
     try {
-      const historyForApi = chatLog
-        .filter(t => t.status === 'applied')
-        .map(t => ({ prompt: t.prompt, code: t.responseCode }));
-        
-      const newCode = await generatePluginCode(project, newTurn.prompt, originalCode, historyForApi, fileContent);
-      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, responseCode: newCode, status: 'completed' } : t));
+      const modifications = await generateProjectChanges(project, newTurn.prompt, fileContents, fileContent);
+      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, modifications, status: 'completed' } : t));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, responseCode: `// Error generating code: ${errorMessage}`, status: 'error' } : t));
+      setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, errorMessage, status: 'error' } : t));
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleApplyChanges = (turnId: string, newCode: string) => {
-    if (newCode.startsWith('// Error')) return;
-    onApplyChanges(newCode);
+  const handleApplyChanges = (turnId: string) => {
+    const turn = chatLog.find(t => t.id === turnId);
+    if (!turn || turn.modifications.length === 0) return;
+    onApplyChanges(turn.modifications);
     setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'applied' } : t));
   };
 
@@ -213,7 +219,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
     setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'discarded' } : t));
   };
   
-  const canGenerate = !isGenerating && prompt.trim().length > 0 && originalCode.length > 0;
+  const canGenerate = !isGenerating && prompt.trim().length > 0 && hasLoadedProject;
   
   return (
     <div className="h-full flex flex-col bg-dark text-sm">
@@ -229,7 +235,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
         {isGenerating && chatLog[0]?.status === 'pending' && <AiMessage turn={chatLog[0]} onApply={() => {}} onDiscard={() => {}} />}
         {chatLog.slice(isGenerating ? 1 : 0).map(turn => (
             <React.Fragment key={turn.id}>
-                <AiMessage turn={turn} onApply={() => handleApplyChanges(turn.id, turn.responseCode)} onDiscard={() => handleDiscard(turn.id)} />
+                <AiMessage turn={turn} onApply={() => handleApplyChanges(turn.id)} onDiscard={() => handleDiscard(turn.id)} />
                 <UserMessage turn={turn} />
             </React.Fragment>
         ))}
@@ -237,7 +243,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
             <div className="h-full flex flex-col items-center justify-center text-center text-light-text p-4 m-auto">
                 <Icon name="sparkles" className="w-16 h-16 text-secondary/10" />
                 <h3 className="mt-4 font-bold text-light">AI Assistant Ready</h3>
-                <p className="mt-1 max-w-xs">{originalCode.length > 0 ? "Describe the changes you want to make." : "Select a file to get started."}</p>
+                <p className="mt-1 max-w-xs">{hasLoadedProject ? "Describe the changes you want to make to your project." : "Loading project files..."}</p>
             </div>
         )}
       </div>
@@ -255,9 +261,9 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, origi
         <div className="relative">
             <textarea
               value={prompt} onChange={(e) => setPrompt(e.target.value)}
-              placeholder={originalCode.length > 0 ? "e.g., 'give player 3 diamonds on join'" : "Select a Java file to start"}
+              placeholder={hasLoadedProject ? "e.g., 'add a /heal command'" : "Waiting for project to load..."}
               className="w-full bg-darker border border-secondary/20 rounded-lg p-3 pr-20 resize-none focus:outline-none focus:ring-2 focus:ring-secondary disabled:opacity-50"
-              rows={2} disabled={isGenerating || !originalCode.length}
+              rows={2} disabled={isGenerating || !hasLoadedProject}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && canGenerate) { e.preventDefault(); handleGenerateCode(); } }}
             />
             <div className="absolute right-2 top-2 flex items-center gap-1">

@@ -68,8 +68,8 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ onClose, onCreate }) => {
 
     useEffect(() => {
         const versions = getPlatformVersions(platform);
-        if (!versions.includes(minecraftVersion)) setMinecraftVersion(versions[0]);
-    }, [platform, minecraftVersion]);
+        setMinecraftVersion(versions[0]);
+    }, [platform]);
 
     useEffect(() => {
         if (name.length > 0 && name.length < 3) setNameError('Name must be at least 3 characters.');

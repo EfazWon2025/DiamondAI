@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { Project, ToastMessage, FileTreeNode } from '../types';
+import type { Project, ToastMessage, FileTreeNode, AIFileModification } from '../types';
 import { PLATFORMS } from '../services/platforms';
 import { Icon, IconName } from './Icon';
 import { FileExplorer } from './ide/FileExplorer';
@@ -13,7 +13,7 @@ import { CommandPalette } from './ide/CommandPalette';
 import { useFileManagement } from '../hooks/useFileManagement';
 import { usePanelResizing } from '../hooks/usePanelResizing';
 import { useCompilation } from '../hooks/useCompilation';
-import { executeBuildCommand, renameFileOrFolder, deleteFileOrFolder } from '../services/api';
+import { executeBuildCommand } from '../services/api';
 import { SettingsPanel } from './ide/SettingsPanel';
 
 const getFileIconName = (fileType?: FileTreeNode['fileType']): IconName => {
@@ -22,6 +22,7 @@ const getFileIconName = (fileType?: FileTreeNode['fileType']): IconName => {
         case 'json': return 'json';
         case 'png': return 'png';
         case 'gradle': return 'gradle';
+        case 'yml': return 'fileCode';
         case 'toml': case 'properties': return 'fileCode';
         default: return 'fileCode';
     }
@@ -43,7 +44,7 @@ interface IdeViewProps {
 }
 
 const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) => {
-    const { fileTree, fileContents, openFiles, activePath, setActivePath, handleFileSelect, handleCloseFile, handleCodeChange, handleAiApplyChanges, findFileInTree, dirtyFiles, saveFile, renameNode, deleteNode } = useFileManagement(project, addToast);
+    const { fileTree, fileContents, openFiles, activePath, setActivePath, handleFileSelect, handleCloseFile, handleCodeChange, handleAiApplyMultipleChanges, findFileInTree, dirtyFiles, saveFile, renameNode, deleteNode } = useFileManagement(project, addToast);
     const { panelWidths, bottomPanelHeight, handleMouseDownVertical, handleMouseDownHorizontal, ideContainerRef } = usePanelResizing();
     const { compilationStatus, handleCompileProject } = useCompilation(project, addToast);
     
@@ -163,7 +164,7 @@ const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) => {
                         <button onClick={() => setRightPanelTab('settings')} className={`py-2 px-4 ${rightPanelTab === 'settings' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>SETTINGS</button>
                     </div>
                     <div className="flex-grow overflow-auto">
-                        {rightPanelTab === 'ai' && <AICodeAssistant project={project} originalCode={fileContents[activePath] || ''} onApplyChanges={(code) => handleAiApplyChanges(activePath, code)} addToast={addToast} />}
+                        {rightPanelTab === 'ai' && <AICodeAssistant project={project} fileContents={fileContents} onApplyChanges={handleAiApplyMultipleChanges} addToast={addToast} />}
                         {rightPanelTab === 'assets' && <AssetPreview activeFile={currentFile} />}
                         {rightPanelTab === 'settings' && <SettingsPanel />}
                     </div>

@@ -1,96 +1,100 @@
-import { GoogleGenAI } from "@google/genai";
-import type { AIHistoryItem, Project } from '../types';
+import { GoogleGenAI, Type } from "@google/genai";
+import type { AIFileModification, Project } from '../types';
 import { logger } from './logger';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const COMMON_INSTRUCTIONS = `
-- You MUST return the ENTIRE, complete, and updated Java file content.
-- Your response must be ONLY the raw Java code. Do NOT use markdown code blocks (e.g. \`\`\`java) or any other conversational text or explanation.
-- Ensure all necessary imports are present to make the code compile.
-- Analyze the user's request and the existing code to intelligently merge the changes. Do not just append code at the end of the file.
-- If a user asks to add a feature, you must implement it fully within the class structure provided.
-- Your goal is to produce production-quality, working code based on the user's request.
-- Your entire response will be written directly to a .java file and compiled. It MUST NOT contain any text, explanation, or markdown formatting—only the raw Java code for the complete file.
+- You are an expert Minecraft developer who modifies an entire project structure based on a user's request.
+- Your response MUST be a valid JSON object. Do NOT use markdown code blocks (e.g. \`\`\`json) or any other conversational text or explanation.
+- The JSON object must contain a single key "files" which is an array of objects.
+- Each object in the "files" array represents a file to be created or updated and must have two keys: "path" (a string representing the full file path from the project root) and "content" (a string with the full, complete file content).
+- You must provide the FULL and COMPLETE content for every file you modify or create. Do not provide snippets or partial code.
+- Analyze the user's request and the existing project files to intelligently merge changes.
+- If a user asks to add a feature like a command, you MUST modify ALL necessary files. For a Spigot plugin, this means updating 'plugin.yml' to register the command AND updating the main Java file to implement the command logic.
+- Your goal is to produce a production-quality, working project structure based on the user's request.
+- Your entire response will be parsed as JSON. It MUST NOT contain any text, explanation, or markdown formatting—only the raw JSON object.
 `;
 
-
 function getSystemInstruction(project: Project): string {
-    const { platform, name: projectName } = project;
-    const safeProjectName = projectName.replace(/[^a-zA-Z0-9]/g, '');
-    const mainClassName = safeProjectName.charAt(0).toUpperCase() + safeProjectName.slice(1);
-    const packageName = `com.example.${safeProjectName.toLowerCase()}`;
-    
+    const { platform, name, minecraftVersion } = project;
     let platformInstructions = '';
+
+    const projectContextInstruction = `
+- You are working inside a project named "${name}".
+- The Minecraft version for this project is ${minecraftVersion}.
+- All file paths you generate MUST start with "${name}/". For example: "${name}/src/main/java/com/example/MyClass.java".
+- Do NOT invent a new project name. Stick to the provided project structure. Confine all your modifications to the existing project.
+`;
 
     switch (platform) {
         case 'spigot':
         case 'paper':
         case 'bukkit':
-            platformInstructions = `You are an expert Minecraft Spigot plugin developer. You write clean, efficient, and modern Java code using the Spigot/Paper/Bukkit API.
-The main plugin class is named '${mainClassName}' and it extends 'JavaPlugin'. The package is '${packageName}'.
-
-Follow these rules STRICTLY:
-1. **Events:** Implement \`Listener\`, use \`@EventHandler\`, and register events in \`onEnable()\` with \`getServer().getPluginManager().registerEvents(this, this);\`.
-2. **Commands:** Register commands in \`onEnable()\` using \`getCommand("your_command").setExecutor(this);\`. The main class must implement \`CommandExecutor\`.
-3. **Imports:** Add all required imports (e.g., \`org.bukkit.event.Listener\`, event classes).
-4. **Code Structure:** Intelligently integrate new code. Do not add placeholder methods.`;
+            platformInstructions = `You are an expert in Spigot/Paper/Bukkit plugin development.
+- Key Files: Logic is in Java files. Configuration is in 'plugin.yml'.
+- Versioning: Ensure 'plugin.yml' \`api-version\` matches the project's Minecraft version (e.g., '1.20' for 1.20.4). Ensure the build file ('pom.xml' or 'build.gradle') uses the correct Java version (Java 17 for Minecraft 1.18+).
+- Commands: Register commands in 'plugin.yml' and implement them using CommandExecutor. Include permission checks.
+- Events: Use @EventHandler for event listeners.
+- Safety First: For operations like teleportation, ALWAYS perform safety checks. Ensure the destination location is safe and won't cause the player to get stuck or take damage. Use methods like getHighestBlockAt() or check for solid blocks.
+- Configurability: Do NOT hardcode values like magic numbers, messages, or potion effects. Use a 'config.yml' to make features configurable by server admins. Generate a default config with comments.
+- Feature Clarity: If a request is abstract (e.g., "go to the moon"), implement a reasonable, safe interpretation (e.g., teleport high in the sky with Slow Falling) and add code comments explaining the implementation and its limitations.`;
             break;
-        
         case 'forge':
         case 'neoforge':
-            platformInstructions = `You are an expert Minecraft Forge/NeoForge mod developer. You write clean and modern Java code using the Forge/NeoForge API.
-The main mod class is named '${mainClassName}' and is annotated with @Mod("${safeProjectName.toLowerCase()}"). The package is '${packageName}'.
-
-Follow these rules STRICTLY:
-1. **Event Bus:** Register event handlers in the constructor: \`MinecraftForge.EVENT_BUS.register(this);\`.
-2. **Event Handlers:** Annotate methods with \`@SubscribeEvent\`.
-3. **Registration:** Use \`DeferredRegister\` for items, blocks, etc., and register it to the mod event bus in the constructor.
-4. **Imports:** Add all required imports (e.g., \`net.minecraftforge.fml.common.Mod\`, \`net.minecraftforge.eventbus.api.SubscribeEvent\`).
-5. **Code Structure:** Integrate new features logically. Do not add placeholder methods.`;
+            platformInstructions = `The user is working on a Forge/NeoForge mod. Key files are 'mods.toml' for configuration and Java files for logic. Event handlers use @SubscribeEvent and items/blocks are registered using DeferredRegister.`;
             break;
-
         case 'fabric':
-            platformInstructions = `You are an expert Minecraft Fabric mod developer. You write clean and modern Java code using the Fabric API.
-The main mod class is named '${mainClassName}' and implements 'ModInitializer'. The entry point is the 'onInitialize' method. The package is '${packageName}'.
-
-Follow these rules STRICTLY:
-1. **Entry Point:** All initialization logic goes inside \`onInitialize()\`.
-2. **Events (Callbacks):** Register callbacks in \`onInitialize()\`. E.g., \`ServerPlayConnectionEvents.JOIN.register(...);\`.
-3. **Commands:** Register commands using \`CommandRegistrationCallback.EVENT.register(...);\`.
-4. **Registration:** Register items and blocks in \`onInitialize()\` using \`Registry.register(...);\`.
-5. **Imports:** Add all required imports (e.g., \`net.fabricmc.api.ModInitializer\`).
-6. **Code Structure:** All registration logic goes in \`onInitialize()\`. Do not add placeholder methods.`;
+            platformInstructions = `The user is working on a Fabric mod. Key files are 'fabric.mod.json' for configuration and Java files for logic. The main class implements ModInitializer, and registrations happen in the onInitialize method.`;
             break;
-
         default:
-            platformInstructions = 'You are a helpful code assistant. Return only the complete, updated code.';
+            platformInstructions = 'You are a helpful code assistant.';
     }
 
-    return `${platformInstructions}\n${COMMON_INSTRUCTIONS}`;
+    return `${platformInstructions}\n${projectContextInstruction}\n${COMMON_INSTRUCTIONS}`;
 }
 
-export async function generatePluginCode(
+const responseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    files: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          path: { type: Type.STRING },
+          content: { type: Type.STRING },
+        },
+        required: ["path", "content"]
+      },
+    },
+  },
+  required: ["files"],
+};
+
+
+export async function generateProjectChanges(
     project: Project,
     prompt: string,
-    currentCode: string,
-    history: Omit<AIHistoryItem, 'id' | 'timestamp' | 'applied'>[],
+    fileContents: Record<string, string>,
     fileContext?: string | null
-): Promise<string> {
+): Promise<AIFileModification[]> {
     try {
         const contextPrompt = fileContext
             ? `The user has provided the following document as context. Use this information to inform your code generation:\n--- DOCUMENT START ---\n${fileContext}\n--- DOCUMENT END ---\n\n`
             : '';
 
+        const projectState = JSON.stringify(fileContents, null, 2);
+
         const fullPrompt = `${contextPrompt}The user wants to make the following change: "${prompt}"
 
-This is the current code of the file they are editing:
----
-${currentCode}
----
+This is the current state of all files in the project, represented as a JSON object where keys are file paths and values are their content:
+\`\`\`json
+${projectState}
+\`\`\`
 
-Based on my system instructions, please provide the full, updated code for the entire file with the requested changes properly integrated. Remember to add all necessary imports and follow the platform's conventions.`;
-
+Based on my system instructions, analyze the provided JSON file structure and provide a new JSON object in the specified format containing the full, updated content for all necessary files.`;
+        
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: fullPrompt,
@@ -98,23 +102,41 @@ Based on my system instructions, please provide the full, updated code for the e
                 systemInstruction: getSystemInstruction(project),
                 temperature: 0.0,
                 topK: 1,
+                responseMimeType: "application/json",
+                responseSchema: responseSchema,
             }
         });
+
+        if (!response.text) {
+             throw new Error("The AI model did not return any content. This could be due to the safety filter or an issue with the prompt.");
+        }
         
-        let code = response.text.trim();
-        const match = /```(?:java)?\s*([\s\S]+?)\s*```/.exec(code);
-        if (match) {
-            code = match[1].trim();
-        } else if (code.startsWith("```")) {
-            code = code.replace(/^```(?:java)?\s*\n?/, '').replace(/\n?```$/, '');
+        const parsedResponse = JSON.parse(response.text);
+
+        if (!parsedResponse.files || !Array.isArray(parsedResponse.files)) {
+            throw new Error("AI response was not in the expected format. Missing 'files' array.");
         }
 
-        return code;
+        return parsedResponse.files;
     } catch (error) {
         logger.error("Error generating code via Gemini API:", error);
-        if (error instanceof Error) {
-            throw new Error(`Failed to generate code: ${error.message}`);
+        
+        let errorMessage = "An unknown error occurred during code generation.";
+        if (error instanceof SyntaxError) {
+             errorMessage = "AI returned invalid JSON. Please try rephrasing your request.";
+        } else if (error instanceof Error) {
+            const msg = error.message.toLowerCase();
+            if (msg.includes('api key') || msg.includes('permission denied') || msg.includes('401') || msg.includes('403')) {
+                errorMessage = "Authentication failed. Please ensure your API key is correct and has the necessary permissions.";
+            } else if (msg.includes('rate limit') || msg.includes('429')) {
+                errorMessage = "Rate limit exceeded. Please wait a moment and try again.";
+            } else if (msg.includes('network') || msg.includes('failed to fetch')) {
+                errorMessage = "Network connection error. Please check your internet connection and try again.";
+            } else {
+                errorMessage = `AI generation failed: ${error.message}`;
+            }
         }
-        throw new Error("An unknown error occurred during code generation.");
+        
+        throw new Error(errorMessage);
     }
 }
