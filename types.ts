@@ -119,6 +119,7 @@ export interface ChatTurn {
     fileContextContent?: string | null;
     preModificationContent?: Record<string, string>;
     streamedCode?: string;
+    modelUsed?: string;
 }
 
 export interface LandingChatMessage {

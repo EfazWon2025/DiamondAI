@@ -1,4 +1,4 @@
-import React, { useState, lazy, Suspense, useEffect, useRef } from 'react';
+import React, { useState, lazy, Suspense, useEffect, useRef, useCallback } from 'react';
 import type { Project, ToastMessage, LandingChatMessage } from './types';
 import { Toast } from './components/Toast';
 import { createProject as apiCreateProject } from './services/api';
@@ -10,13 +10,23 @@ const LandingPage = lazy(() => import('./components/LandingPage.tsx'));
 const ProjectModal = lazy(() => import('./components/ProjectModal.tsx'));
 const IdeView = lazy(() => import('./components/IdeView.tsx'));
 const BanScreen = lazy(() => import('./components/BanScreen.tsx'));
-
+const ApiKeySelectionScreen = lazy(() => import('./components/ApiKeySelectionScreen.tsx')); // New import
 
 const App: React.FC = () => {
-    const [view, setView] = useState<'landing' | 'ide'>('landing');
+    const [view, setView] = useState<'landing' | 'ide' | 'keySelection'>('keySelection'); // Initial view set to keySelection
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [project, setProject] = useState<Project | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    
+    // Moved up to be available for useEffects and useCallback
+    const addToast = useCallback((message: string, type: ToastMessage['type'] = 'success') => {
+        setToasts(prev => [...prev, { id: Date.now(), message, type }]);
+    }, []);
+
+    const removeToast = (id: number) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    };
+
     const [banExpiresAt, setBanExpiresAt] = useState<number | null>(null);
     
     const themes = ['diamond', 'ruby', 'sapphire', 'emerald'];
@@ -28,7 +38,48 @@ const App: React.FC = () => {
     const [isChatResponding, setIsChatResponding] = useState(false);
     const chatSessionRef = useRef<Chat | null>(null);
 
+    // New states for Veo API Key Selection
+    const [veoApiKeySelected, setVeoApiKeySelected] = useState<boolean | null>(null); // null means not yet checked
+    const [isKeySelectionLoading, setIsKeySelectionLoading] = useState(false); // For showing spinner during key selection
+
     const LANDING_PAGE_CHAT_INSTRUCTIONS = `You are a 24/7 support assistant for Diamond AI, an AI-powered IDE. Your primary role is to help existing and potential users by answering their questions about the platform, troubleshooting common issues, and providing guidance on using the IDE's features. Be patient, clear, and professional. Your goal is to provide excellent customer support. Do not generate code.`;
+
+    // Initial check for Veo API Key
+    useEffect(() => {
+        const checkVeoKey = async () => {
+            setIsKeySelectionLoading(true);
+            try {
+                const hasSelected = await window.aistudio.hasSelectedApiKey();
+                setVeoApiKeySelected(hasSelected);
+                setView(hasSelected ? 'landing' : 'keySelection');
+            } catch (e) {
+                console.error("Error checking API key status:", e);
+                setVeoApiKeySelected(false); // Assume not selected on error
+                setView('keySelection');
+                addToast("Failed to check API key status. Please try again.", "error");
+            } finally {
+                setIsKeySelectionLoading(false);
+            }
+        };
+        checkVeoKey();
+    }, [addToast]); // Add addToast to dependencies
+
+    const handleSelectVeoApiKey = useCallback(async () => {
+        setIsKeySelectionLoading(true);
+        try {
+            await window.aistudio.openSelectKey();
+            // Assume success immediately to mitigate race condition
+            setVeoApiKeySelected(true);
+            setView('landing'); // Proceed to landing page
+            addToast("API key selected successfully!", "success");
+        } catch (e) {
+            console.error("Error opening API key selection dialog:", e);
+            setVeoApiKeySelected(false);
+            addToast("Failed to open API key selection. Please try again.", "error");
+        } finally {
+            setIsKeySelectionLoading(false);
+        }
+    }, [addToast]);
 
     useEffect(() => {
         // Initialize chat with a welcome message
@@ -41,7 +92,7 @@ const App: React.FC = () => {
                 }
             ]);
         }
-    }, [isChatOpen]);
+    }, [isChatOpen, chatMessages.length]);
 
 
     const handleToggleChat = () => setIsChatOpen(prev => !prev);
@@ -68,7 +119,8 @@ const App: React.FC = () => {
 
         try {
             if (!chatSessionRef.current) {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                // IMPORTANT: Create GoogleGenAI instance right before API call
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY }); 
                 chatSessionRef.current = ai.chats.create({
                     model: 'gemini-2.5-flash',
                     config: { systemInstruction: LANDING_PAGE_CHAT_INSTRUCTIONS },
@@ -87,10 +139,17 @@ const App: React.FC = () => {
 
         } catch (error) {
             console.error("Chat error:", error);
-            const errorMessage = "Sorry, I encountered an error. Please try again.";
-            setChatMessages(prev => prev.map(msg => 
-                msg.id === modelResponseId ? { ...msg, text: errorMessage } : msg
-            ));
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            // Specific check for Veo API key related error
+            if (errorMessage.includes("Requested entity was not found.")) {
+                setVeoApiKeySelected(false);
+                setView('keySelection');
+                addToast("Your API key may be invalid or expired. Please select it again.", "error");
+            } else {
+                setChatMessages(prev => prev.map(msg => 
+                    msg.id === modelResponseId ? { ...msg, text: errorMessage } : msg
+                ));
+            }
         } finally {
             setIsChatResponding(false);
             setChatMessages(prev => prev.map(msg => 
@@ -106,7 +165,7 @@ const App: React.FC = () => {
             setCurrentTheme(savedTheme);
             document.documentElement.setAttribute('data-theme', savedTheme);
         }
-    }, []);
+    }, [themes]);
 
     const handleThemeChange = () => {
         const currentIndex = themes.indexOf(currentTheme);
@@ -152,29 +211,32 @@ const App: React.FC = () => {
     }, []);
 
 
-    const addToast = (message: string, type: ToastMessage['type'] = 'success') => {
-        setToasts(prev => [...prev, { id: Date.now(), message, type }]);
-    };
-
-    const removeToast = (id: number) => {
-        setToasts(prev => prev.filter(t => t.id !== id));
-    };
-
     const handleGetStarted = () => setIsModalOpen(true);
     const handleCloseModal = () => setIsModalOpen(false);
     const handleExitIde = () => { setProject(null); setView('landing'); };
     
     const handleCreateProject = async (projectDetails: Omit<Project, 'id' | 'createdAt'>) => {
         try {
-            addToast("Creating your project workspace...", "info");
+            addToast("Creating project & generating code with AI...", "info");
+            // IMPORTANT: Create GoogleGenAI instance right before API call if needed for Veo,
+            // but for createProject, the AI service itself handles it, so no change here.
             const newProject = await apiCreateProject(projectDetails);
             setProject(newProject);
             setIsModalOpen(false);
             setView('ide');
-            addToast("Project created successfully!", "success");
+            addToast("Project generated successfully!", "success");
         } catch (error) {
             console.error("Failed to create project:", error);
-            addToast("Could not create project. Please try again.", 'error');
+            // The error messages from our services are designed to be user-friendly.
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during project creation.";
+            // Specific check for Veo API key related error
+            if (errorMessage.includes("Requested entity was not found.")) {
+                setVeoApiKeySelected(false);
+                setView('keySelection');
+                addToast("Your API key may be invalid or expired. Please select it again.", "error");
+            } else {
+                addToast(errorMessage, 'error');
+            }
         }
     };
 
@@ -184,28 +246,39 @@ const App: React.FC = () => {
       </div>
     );
 
+    let contentToRender;
+
+    if (banExpiresAt && banExpiresAt > Date.now()) {
+        contentToRender = <BanScreen banExpiresAt={banExpiresAt} />;
+    } else if (veoApiKeySelected === null || isKeySelectionLoading) {
+        // Show initial loading while checking API key or if loading the dialog
+        contentToRender = <LoadingFallback />;
+    } else if (view === 'keySelection') {
+        contentToRender = <ApiKeySelectionScreen onSelectKey={handleSelectVeoApiKey} isLoading={isKeySelectionLoading} />;
+    } else if (view === 'landing') {
+        contentToRender = (
+            <LandingPage 
+                onGetStarted={handleGetStarted} 
+                onThemeChange={handleThemeChange} 
+                isChatOpen={isChatOpen}
+                chatMessages={chatMessages}
+                isChatResponding={isChatResponding}
+                onToggleChat={handleToggleChat}
+                onSendChatMessage={handleSendChatMessage}
+            />
+        );
+    } else if (view === 'ide' && project) {
+        contentToRender = <IdeView project={project} onExit={handleExitIde} addToast={addToast} />;
+    } else {
+        // Fallback or unexpected state, could redirect to landing or error
+        contentToRender = <LoadingFallback />;
+    }
+
     return (
         <div className="bg-darker text-light min-h-screen font-inter">
             <Suspense fallback={<LoadingFallback />}>
-                {banExpiresAt && banExpiresAt > Date.now() ? (
-                    <BanScreen banExpiresAt={banExpiresAt} />
-                ) : (
-                    <>
-                        {view === 'landing' && (
-                             <LandingPage 
-                                onGetStarted={handleGetStarted} 
-                                onThemeChange={handleThemeChange} 
-                                isChatOpen={isChatOpen}
-                                chatMessages={chatMessages}
-                                isChatResponding={isChatResponding}
-                                onToggleChat={handleToggleChat}
-                                onSendChatMessage={handleSendChatMessage}
-                             />
-                        )}
-                        {view === 'ide' && project && <IdeView project={project} onExit={handleExitIde} addToast={addToast} />}
-                        {isModalOpen && <ProjectModal onClose={handleCloseModal} onCreate={handleCreateProject} />}
-                    </>
-                )}
+                {contentToRender}
+                {isModalOpen && <ProjectModal onClose={handleCloseModal} onCreate={handleCreateProject} />}
             </Suspense>
 
             <div aria-live="assertive" className="fixed inset-0 flex flex-col items-end px-4 py-6 pointer-events-none sm:p-6 z-[200] space-y-2">

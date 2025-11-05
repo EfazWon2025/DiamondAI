@@ -19,14 +19,13 @@ export const useCompilation = (project: Project, addToast: (message: string, typ
         addToast('Starting compilation...', 'info');
         logger.info('Build started...');
         try {
-            const result = await compileProject(project.id);
+            const result = await compileProject(project.id, project.name, project.platform);
             setCompilationStatus({ isCompiling: false, result });
             
             const message = getCompilationMessage(project.platform, result.success);
             addToast(message, result.success ? 'success' : 'error');
 
-            if (result.success && result.buildId && result.fileName) {
-                // await downloadBuild(project.id, result.buildId, result.fileName);
+            if (result.success) {
                 logger.info('Build successful', { details: { downloadUrl: result.details?.downloadUrl } });
             } else {
                  logger.error('Syntax error in MyPlugin.java:42', { source: 'Compiler', details: 'Missing semicolon on line 42.' });
@@ -41,8 +40,22 @@ export const useCompilation = (project: Project, addToast: (message: string, typ
         }
     };
     
+    const handleDownloadLastBuild = async () => {
+        if (compilationStatus.result?.success && compilationStatus.result.buildId && compilationStatus.result.fileName) {
+            try {
+                addToast('Starting download...', 'info');
+                await downloadBuild(project.id, compilationStatus.result.buildId, compilationStatus.result.fileName);
+            } catch (error) {
+                addToast('Download failed.', 'error');
+            }
+        } else {
+            addToast('No successful build available to download.', 'error');
+        }
+    };
+
     return {
         compilationStatus,
-        handleCompileProject
+        handleCompileProject,
+        handleDownloadLastBuild,
     };
 };

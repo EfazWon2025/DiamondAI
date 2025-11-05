@@ -27,7 +27,7 @@ interface SpeechRecognition extends EventTarget {
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'https://esm.sh/react-markdown@9';
-import { generateAssistantResponseStream, generateProjectChangesStream } from '../../services/geminiService.ts';
+import { generateAssistantResponseStream, generateProjectChangesStream, AssistantStreamChunk, CodeStreamChunk } from '../../services/geminiService.ts';
 import { processFile } from '../../services/fileProcessor.ts';
 import type { Project, ToastMessage, AIFileModification, ChatTurn } from '../../types';
 import { Icon } from '../Icon.tsx';
@@ -194,6 +194,13 @@ const AiMessage: React.FC<{ turn: ChatTurn; onGenerateCode: () => void; onApply:
     return (
         <div className="flex justify-start mb-4">
             <div className="bg-darker p-1 rounded-lg w-full shadow-md border border-secondary/10">
+                {/* Display modelUsed here, maybe next to the title or status */}
+                {turn.modelUsed && (
+                    <div className="p-2 bg-dark rounded-t-lg text-xs text-light-text flex items-center gap-1">
+                        <Icon name="cpu" className="w-3 h-3 text-secondary" />
+                        Model: <span className="font-mono text-primary">{turn.modelUsed}</span>
+                    </div>
+                )}
                 {renderContent()}
             </div>
         </div>
@@ -294,40 +301,82 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
         status: 'pending_response',
         fileContextName: uploadedFile?.name,
         fileContextContent: fileContent,
+        modelUsed: undefined, // Initialize as undefined
     };
     setChatLog(prev => [newTurn, ...prev]);
     setPrompt('');
     handleRemoveFile();
 
-    try {
-        const response = await generateAssistantResponseStream(project, newTurn.prompt, fileContents, newTurn.fileContextContent);
-        const functionCalls = response.functionCalls;
+    // Declare usedModel in a broader scope
+    let usedModel: string | undefined = undefined; 
 
-        if (functionCalls && functionCalls.length > 0) {
-            const call = functionCalls[0];
-            if (call.name === 'generateCodePlan' && call.args.plan) {
-                 // Fix: Cast `call.args.plan` to string as expected by the ChatTurn type.
-                 setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, plan: call.args.plan as string, status: 'plan_completed' } : t));
-            } else if (call.name === 'chatResponse' && call.args.message) {
-                 // Fix: Cast `call.args.message` to string as expected by the ChatTurn type.
-                 setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, chatResponse: call.args.message as string, status: 'chat_response' } : t));
-            } else {
-                throw new Error("AI returned an unknown tool call.");
-            }
-        } else {
-             // Fallback to displaying the text if no tool is called
-            const textResponse = response.text;
-            if (textResponse) {
-                setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, chatResponse: textResponse, status: 'chat_response' } : t));
-            } else {
-                throw new Error("AI returned an empty response.");
+    try {
+        const stream = generateAssistantResponseStream(project, newTurn.prompt, fileContents, newTurn.fileContextContent);
+        
+        let planBuffer = '';
+        let chatBuffer = '';
+        let detectedTool: 'plan' | 'chat' | null = null;
+        let hasReceivedContent = false;
+        
+        for await (const wrappedChunk of stream) {
+            const chunk = wrappedChunk.chunk;
+            usedModel = wrappedChunk.model; // Capture model name
+            const fc = chunk.functionCalls?.[0];
+            if (fc) {
+                if (fc.name === 'generateCodePlan' && fc.args.plan) {
+                    if (!detectedTool) detectedTool = 'plan';
+                    if (detectedTool === 'plan') {
+                        planBuffer += fc.args.plan;
+                        hasReceivedContent = true;
+                        setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, plan: planBuffer, status: 'plan_pending', modelUsed: usedModel } : t));
+                    }
+                } else if (fc.name === 'chatResponse' && fc.args.message) {
+                    if (!detectedTool) detectedTool = 'chat';
+                    if (detectedTool === 'chat') {
+                        chatBuffer += fc.args.message;
+                        hasReceivedContent = true;
+                        // Use chatResponse for the property name and keep status pending_response while streaming
+                        setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, chatResponse: chatBuffer, status: 'pending_response', modelUsed: usedModel } : t));
+                    }
+                }
+            } else if (chunk.text && !hasReceivedContent) {
+                // Fallback if no tool is called but text is streamed
+                if (!detectedTool) detectedTool = 'chat';
+                if (detectedTool === 'chat') {
+                    chatBuffer += chunk.text;
+                    hasReceivedContent = true;
+                    setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, chatResponse: chatBuffer, status: 'pending_response', modelUsed: usedModel } : t));
+                }
             }
         }
+
+        // Finalize the turn state after the stream ends
+        if (detectedTool === 'plan') {
+            setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, status: 'plan_completed', modelUsed: usedModel } : t));
+        } else if (detectedTool === 'chat') {
+            setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, status: 'chat_response', modelUsed: usedModel } : t));
+        } else {
+            throw new Error("AI returned an empty response or did not call a required tool.");
+        }
+
     } catch (error) {
+        console.error("Chat error:", error);
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-        setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, errorMessage, status: 'error' } : t));
+        // Specific check for Veo API key related error
+        if (errorMessage.includes("Requested entity was not found.")) {
+            // Note: Veo API key is not used for this chat. This logic should ideally be outside or handled for relevant APIs.
+            // For now, it will simply report the error within the chat.
+            setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, errorMessage, status: 'error', modelUsed: usedModel } : t));
+        } else {
+            setChatLog(prev => prev.map(t => t.id === newTurn.id ? { ...t, errorMessage, status: 'error', modelUsed: usedModel } : t));
+        }
     } finally {
         setIsGenerating(false);
+        setChatLog(prev => prev.map(t => 
+            t.id === newTurn.id && t.status === 'pending_response'
+            ? { ...t, isStreaming: false, modelUsed: usedModel } // Ensure isStreaming is false and modelUsed is final
+            : t
+        ));
     }
   };
   
@@ -338,13 +387,15 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
     setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, status: 'code_pending', streamedCode: '' } : t));
     
     let finalCode = '';
+    let usedModel: string | undefined = undefined; // To capture the model name
     try {
         const stream = generateProjectChangesStream(project, turn.prompt, fileContents, turn.plan, turn.fileContextContent);
-        for await (const chunk of stream) {
-            finalCode += chunk;
+        for await (const wrappedChunk of stream) {
+            finalCode += wrappedChunk.content;
+            usedModel = wrappedChunk.model; // Capture model name
             setChatLog(prev => prev.map(t => 
                 t.id === turnId 
-                ? { ...t, streamedCode: finalCode } 
+                ? { ...t, streamedCode: finalCode, modelUsed: usedModel } 
                 : t
             ));
         }
@@ -362,7 +413,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
         }
 
         const modifications: AIFileModification[] = parsedResponse.files;
-        setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, modifications, status: 'code_completed' } : t));
+        setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, modifications, status: 'code_completed', modelUsed: usedModel } : t));
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during code generation.";
@@ -377,7 +428,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
                 window.location.reload();
             }, 2000);
         } else {
-            setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, errorMessage, status: 'error' } : t));
+            setChatLog(prev => prev.map(t => t.id === turnId ? { ...t, errorMessage, status: 'error', modelUsed: usedModel } : t));
         }
     }
   };
@@ -432,7 +483,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({ project, fileC
             <div className="h-full flex flex-col items-center justify-center text-center text-light-text p-4 m-auto">
                 <Icon name="sparkles" className="w-16 h-16 text-secondary/10" />
                 <h3 className="mt-4 font-bold text-light">Diamond AI Assistant Ready</h3>
-                <p className="mt-1 max-w-xs">{hasLoadedProject ? "Describe the changes you want to make or ask a question." : "Loading project files..."}</p>
+                <p className="mt-1 max-w-xs">{hasLoadedProject ? "Describe the changes you want to make or ask a question." : "Waiting for project to load..."}</p>
             </div>
         )}
       </div>

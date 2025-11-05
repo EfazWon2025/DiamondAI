@@ -11,6 +11,8 @@ const icons = {
     paperclip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />,
     fileText: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" /></>,
     palette: <><circle cx="13.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="10.5" r="2.5" /><circle cx="15.5" cy="15.5" r="2.5" /><circle cx="10.5" cy="17.5" r="2.5" /><circle cx="6.5" cy="13.5" r="2.5" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.83-.13 2.7-.38" /></>,
+    key: <><path d="m21 2-2 2m-7.61 7.61a3 3 0 1 1-5.66-5.66l7.61-7.61zm5.66 5.66L14 10l-4 4-2 2" /><path d="M7 21l-4 4" /></>,
+    cpu: <><rect x="4" y="4" width="16" height="16" rx="2" ry="2" /><path d="M9 9h6v6H9z" /><path d="M9 1v3" /><path d="M15 1v3" /><path d="M9 20v3" /><path d="M15 20v3" /><path d="M20 9h3" /><path d="M20 15h3" /><path d="M1 9h3" /><path d="M1 15h3" /></>,
     
     // IDE
     fileCode: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><polyline points="10 13 8 15 10 17" /><polyline points="14 13 16 15 14 17" /></>,
@@ -66,7 +68,7 @@ export const Icon: React.FC<IconProps> = ({ name, ...props }) => {
       xmlns="http://www.w3.org/2000/svg" 
       width="24" 
       height="24" 
-      viewBox="0 0 24" 
+      viewBox="0 0 24 24" 
       fill={isStroked ? "none" : "currentColor"}
       stroke={isStroked ? "currentColor" : "none"}
       strokeWidth={isStroked ? "2" : "0"}

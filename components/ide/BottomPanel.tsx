@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Icon, IconName } from '../Icon.tsx';
-import type { ConsoleLogEntry, LogEntry } from '../../types';
+import type { ConsoleLogEntry, LogEntry, BuildResult } from '../../types';
 import { useConsoleStream } from '../../hooks/useConsoleStream.ts';
 import { useVirtualization } from '../../hooks/useVirtualization.ts';
 import { logger } from '../../services/logger.ts';
@@ -107,13 +107,58 @@ const ProblemsPanel: React.FC = () => {
     );
 };
 
+const BuildOutputPanel: React.FC<{ result: BuildResult; onDownload: () => void; }> = ({ result, onDownload }) => {
+    const { success, message, fileName, fileSize, compatibleServers } = result;
+
+    return (
+        <div className="p-4 text-sm h-full overflow-y-auto flex flex-col items-center justify-center text-center">
+            {success ? (
+                <Icon name="checkCircle2" className="w-16 h-16 text-primary mb-4" />
+            ) : (
+                <Icon name="xCircle" className="w-16 h-16 text-accent mb-4" />
+            )}
+            <h3 className={`text-2xl font-poppins font-bold ${success ? 'text-light' : 'text-accent'}`}>
+                {success ? 'Build Successful' : 'Build Failed'}
+            </h3>
+            <p className="text-light-text mt-2 mb-6 max-w-md">{message}</p>
+            
+            {success && fileName && (
+                 <div className="bg-dark p-4 rounded-lg border border-secondary/20 space-y-3 w-full max-w-sm">
+                    <div className="flex justify-between">
+                        <span className="font-semibold text-light-text">Filename:</span>
+                        <span className="font-mono text-light">{fileName}</span>
+                    </div>
+                     <div className="flex justify-between">
+                        <span className="font-semibold text-light-text">File Size:</span>
+                        <span className="font-mono text-light">{fileSize ? `${(fileSize / 1024).toFixed(2)} KB` : 'N/A'}</span>
+                    </div>
+                     <div className="flex justify-between">
+                        <span className="font-semibold text-light-text">Compatible:</span>
+                        <span className="font-mono text-light">{compatibleServers.join(', ')}</span>
+                    </div>
+                     <button 
+                        onClick={onDownload} 
+                        className="w-full mt-4 bg-primary text-darker font-bold py-2.5 px-4 rounded-lg transition-all duration-300 hover:bg-primary/80 flex items-center justify-center gap-2"
+                    >
+                        <Icon name="save" className="w-5 h-5" />
+                        Download JAR
+                    </button>
+                 </div>
+            )}
+        </div>
+    );
+};
+
+
 interface BottomPanelProps {
     height: number;
     projectId: string | null;
+    compilationStatus: { isCompiling: boolean; result: BuildResult | null };
+    onDownloadBuild: () => void;
 }
 
-export const BottomPanel: React.FC<BottomPanelProps> = ({ height, projectId }) => {
-    const [activeTab, setActiveTab] = useState<'console' | 'problems' | 'gradle'>('problems');
+export const BottomPanel: React.FC<BottomPanelProps> = ({ height, projectId, compilationStatus, onDownloadBuild }) => {
+    const [activeTab, setActiveTab] = useState<'console' | 'problems' | 'gradle' | 'build'>('problems');
     const { logs } = useConsoleStream(projectId);
     const [problemCount, setProblemCount] = useState(0);
 
@@ -126,10 +171,22 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({ height, projectId }) =
         return () => unsubscribe();
     }, [problemCount]);
 
+    useEffect(() => {
+        if (compilationStatus.result) {
+            setActiveTab('build');
+        }
+    }, [compilationStatus.result]);
+
 
     return (
         <div style={{ height: `${height}px` }} className="bg-dark flex flex-col flex-shrink-0 min-h-[50px] max-h-[60vh]">
             <div className="flex items-center border-b border-secondary/10 text-xs font-semibold">
+                {compilationStatus.result && (
+                    <button onClick={() => setActiveTab('build')} className={`py-2 px-4 flex items-center gap-1.5 ${activeTab === 'build' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>
+                        BUILD
+                        <span className={`w-2 h-2 rounded-full ${compilationStatus.result.success ? 'bg-primary' : 'bg-accent'}`}></span>
+                    </button>
+                )}
                 <button onClick={() => setActiveTab('console')} className={`py-2 px-4 ${activeTab === 'console' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>MINECRAFT CONSOLE</button>
                 <button onClick={() => setActiveTab('problems')} className={`py-2 px-4 flex items-center gap-1.5 ${activeTab === 'problems' ? 'text-light bg-darker' : 'text-light-text hover:bg-darker/50'}`}>
                     PROBLEMS
@@ -141,6 +198,7 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({ height, projectId }) =
                 {activeTab === 'gradle' && <GradlePanel />}
                 {activeTab === 'console' && <MinecraftConsole logs={logs} />}
                 {activeTab === 'problems' && <ProblemsPanel />}
+                {activeTab === 'build' && compilationStatus.result && <BuildOutputPanel result={compilationStatus.result} onDownload={onDownloadBuild} />}
             </div>
         </div>
     );

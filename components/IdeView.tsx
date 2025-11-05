@@ -46,7 +46,7 @@ interface IdeViewProps {
 const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) => {
     const { fileTree, fileContents, openFiles, activePath, setActivePath, handleFileSelect, handleCloseFile, handleCodeChange, handleAiApplyMultipleChanges, handleAiRestoreChanges, findFileInTree, dirtyFiles, saveFile, renameNode, deleteNode } = useFileManagement(project, addToast);
     const { panelWidths, bottomPanelHeight, handleMouseDownVertical, handleMouseDownHorizontal, ideContainerRef } = usePanelResizing();
-    const { compilationStatus, handleCompileProject } = useCompilation(project, addToast);
+    const { compilationStatus, handleCompileProject, handleDownloadLastBuild } = useCompilation(project, addToast);
     
     const [rightPanelTab, setRightPanelTab] = useState<'ai' | 'assets' | 'settings'>('ai');
     const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -152,7 +152,12 @@ const IdeView: React.FC<IdeViewProps> = ({ project, onExit, addToast }) => {
                         )}
                     </div>
                     <div onMouseDown={handleMouseDownHorizontal} className="w-full h-2 bg-dark border-t border-secondary/10 cursor-row-resize shrink-0" />
-                    <BottomPanel height={bottomPanelHeight} projectId={project?.id ?? null} />
+                    <BottomPanel
+                        height={bottomPanelHeight}
+                        projectId={project?.id ?? null}
+                        compilationStatus={compilationStatus}
+                        onDownloadBuild={handleDownloadLastBuild}
+                    />
                 </main>
                 
                 <div onMouseDown={() => handleMouseDownVertical(1)} className="w-2 cursor-col-resize bg-dark hover:bg-secondary transition-colors" />
